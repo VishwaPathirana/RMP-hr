@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 380" width="100%" height="100%">
+  <!-- Background Pill matching exact orange brand color -->
+  <rect x="0" y="0" width="1000" height="380" rx="55" ry="55" fill="#f96022" />
+  
+  <!-- Stylized White Rounded Typography for RMP -->
+  <g fill="none" stroke="#ffffff" stroke-width="52" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Letter R -->
+    <path d="M 110 300 L 110 145 C 110 105, 145 80, 195 80 C 255 80, 290 110, 290 150 C 290 190, 255 220, 195 220 L 160 220 C 215 220, 280 250, 280 300" />
+    
+    <!-- Letter M -->
+    <path d="M 360 300 L 360 150 C 360 105, 400 80, 455 80 C 510 80, 545 110, 545 155 L 545 300 M 545 155 C 545 105, 585 80, 640 80 C 695 80, 730 110, 730 155 L 730 300" />
+    
+    <!-- Letter P -->
+    <path d="M 800 300 L 800 145 C 800 105, 835 80, 890 80 C 945 80, 975 110, 975 150 C 975 190, 945 220, 890 220 L 800 220" />
+  </g>
+</svg>

@@ -1,0 +1,36 @@
+{
+  "name": "rmp-hr-system",
+  "version": "1.0.0",
+  "description": "RMP Labour Registration & Service Period Calculation System (offline desktop app)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^31.3.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "lk.rmp.hrsystem",
+    "productName": "RMP HR System",
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "app.js",
+      "styles.css",
+      "rmp-logo.png",
+      "rmp-logo.svg"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "rmp-logo.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    }
+  }
+}

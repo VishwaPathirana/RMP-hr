@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Labour Registration & Service Period Calculation System</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" type="image/svg+xml" href="rmp-logo.svg">
+  <!-- FontAwesome Icons for clean UI accents -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Chart.js Library for Appraisal Due Analytics Charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- SheetJS Library for Native Excel (.xlsx) Export -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+  <!-- LOGIN DASHBOARD SCREEN -->
+  <div id="loginPage" class="login-backdrop">
+    <div class="login-card">
+      <div class="login-header">
+        <img src="rmp-logo.svg" alt="RMP Logo" class="login-logo-img">
+        <h2>Labour System Login</h2>
+        <p>Service Period Calculation & Appraisal Tracking Management</p>
+      </div>
+
+      <div id="loginErrorAlert" class="alert alert-error" style="display: none;">
+        <i class="fa-solid fa-circle-exclamation"></i> <span id="loginErrorMsg">Invalid username or password</span>
+      </div>
+
+      <form id="loginForm" class="login-form">
+        <div class="form-group">
+          <label for="loginUsername">Username / Email <span class="required">*</span></label>
+          <div class="input-icon-wrapper">
+            <i class="fa-solid fa-user input-icon"></i>
+            <input type="text" id="loginUsername" class="form-control" placeholder="Enter username (e.g. admin)" required autocomplete="username">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="loginPassword">Password <span class="required">*</span></label>
+          <div class="input-icon-wrapper">
+            <i class="fa-solid fa-lock input-icon"></i>
+            <input type="password" id="loginPassword" class="form-control" placeholder="Enter password (e.g. admin123)" required autocomplete="current-password">
+            <button type="button" id="btnTogglePassword" class="btn-toggle-pw" title="Toggle password visibility">
+              <i class="fa-solid fa-eye" id="iconTogglePw"></i>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" id="btnLoginSubmit" class="btn btn-primary btn-block">
+          <i class="fa-solid fa-right-to-bracket"></i> Log In to Dashboard
+        </button>
+      </form>
+
+      <div class="login-demo-hint">
+        <div class="hint-title"><i class="fa-solid fa-key"></i> Default Admin Credentials</div>
+        <div class="hint-body">Username: <strong>admin</strong> | Password: <strong>admin123</strong></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-container" id="appContainer" style="display: none;">
+
+    <!-- App Header -->
+    <header class="app-header">
+      <div class="app-brand">
+        <img src="rmp-logo.svg" alt="RMP Logo" class="brand-logo-img">
+        <div class="brand-title">
+          <h1>Labour Registration System</h1>
+          <p>Service Period Calculation & Appraisal Tracking Management</p>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="app-nav">
+        <button class="nav-tab active" id="tabDirectory" data-page="directoryPage">
+          <i class="fa-solid fa-address-book"></i> Labour Directory
+        </button>
+        <button class="nav-tab" id="tabAppraisals" data-page="appraisalsPage">
+          <i class="fa-solid fa-chart-pie"></i> Appraisal Due Dashboard
+          <span class="tab-badge" id="tabDueBadge">0</span>
+        </button>
+        <button class="nav-tab" id="tabResigned" data-page="resignedPage">
+          <i class="fa-solid fa-user-slash"></i> Resigned Labours
+          <span class="tab-badge badge-orange" id="tabResignedBadge">0</span>
+        </button>
+        <button class="nav-tab" id="tabAnalytics" data-page="analyticsPage">
+          <i class="fa-solid fa-chart-column"></i> Section Analytics
+        </button>
+        <button class="nav-tab" id="tabUsers" data-page="usersPage">
+          <i class="fa-solid fa-user-gear"></i> User Management
+        </button>
+      </nav>
+
+      <div class="header-actions">
+        <div class="user-profile-badge" id="userProfileBadge">
+          <div class="user-avatar" id="userAvatar">A</div>
+          <div class="user-info">
+            <div class="user-name" id="headerUserName">Admin User</div>
+            <div class="user-role-tag" id="headerUserRole">Admin</div>
+          </div>
+          <button id="btnLogout" class="btn-logout" title="Log Out">
+            <i class="fa-solid fa-power-off"></i>
+          </button>
+        </div>
+        <button id="btnExportExcel" class="btn btn-secondary" style="background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; border: none; font-weight: 700;">
+          <i class="fa-solid fa-file-excel"></i> Export Excel
+        </button>
+        <button id="btnNewLabour" class="btn btn-primary">
+          <i class="fa-solid fa-plus"></i> Register New Labour
+        </button>
+      </div>
+    </header>
+
+    <!-- PAGE 1: LABOUR DIRECTORY & REGISTRATION VIEW -->
+    <div id="directoryPage" class="page-view">
+      <!-- Dashboard Summary Cards -->
+      <section class="stats-grid" style="margin-bottom: 1.5rem;">
+        <div class="stat-card">
+          <div class="stat-icon blue">
+            <i class="fa-solid fa-user-group"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="statTotalLabour">0</div>
+            <div class="stat-label">Total Registered</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon green">
+            <i class="fa-solid fa-user-check"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="statActiveLabour">0</div>
+            <div class="stat-label">Active Workforce</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon orange">
+            <i class="fa-solid fa-user-minus"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="statResignedLabour">0</div>
+            <div class="stat-label">Resigned</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon purple">
+            <i class="fa-solid fa-certificate"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="statConfirmedLabour">0</div>
+            <div class="stat-label">Confirmation Letters Done</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Control Toolbar -->
+      <section class="toolbar">
+        <div class="toolbar-left">
+          <div class="search-wrapper">
+            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+            <input type="text" id="searchInput" class="input-search" placeholder="Search by EPF, Name, Designation, Section...">
+          </div>
+
+          <div class="filters-wrapper">
+            <select id="filterSection" class="select-filter">
+              <option value="">All Sections</option>
+              <option value="Yard C Wet C">Yard C Wet C</option>
+              <option value="Yard A">Yard A</option>
+              <option value="Wet A">Wet A</option>
+              <option value="Yard B">Yard B</option>
+              <option value="Wet B">Wet B</option>
+              <option value="Milk">Milk</option>
+              <option value="Dry">Dry</option>
+              <option value="Oil">Oil</option>
+              <option value="Maintanace">Maintanace</option>
+              <option value="55 Estate">55 Estate</option>
+              <option value="Driver">Driver</option>
+              <option value="Yara">Yara</option>
+            </select>
+
+            <select id="filterGender" class="select-filter">
+              <option value="">All Genders</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+
+            <select id="filterStatus" class="select-filter">
+              <option value="">All Confirmation Statuses</option>
+              <option value="Done">Confirmation Letter Done</option>
+              <option value="Pending">Confirmation Letter Pending</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="toolbar-right">
+          <button id="btnClearFilters" class="btn btn-secondary" style="padding: 0.55rem 0.85rem; font-size: 0.8rem;">
+            <i class="fa-solid fa-rotate-left"></i> Reset Filters
+          </button>
+        </div>
+      </section>
+
+      <!-- Main Data Table Container -->
+      <main class="table-card" style="margin-top: 1.5rem;">
+        <div class="table-wrapper">
+          <table class="labour-table" id="labourTable">
+            <thead>
+              <tr>
+                <!-- Core Information Group -->
+                <th data-sort="epfNumber"><div class="th-content">EPF Number <i class="fa-solid fa-sort"></i></div></th>
+                <th data-sort="gender"><div class="th-content">Gender <i class="fa-solid fa-sort"></i></div></th>
+                <th data-sort="nameWithInitials"><div class="th-content">Name with Initials <i class="fa-solid fa-sort"></i></div></th>
+                <th data-sort="firstName"><div class="th-content">First Name <i class="fa-solid fa-sort"></i></div></th>
+                <th data-sort="lastName"><div class="th-content">Last Name <i class="fa-solid fa-sort"></i></div></th>
+                <th data-sort="birthDate"><div class="th-content">Birth Date <i class="fa-solid fa-sort"></i></div></th>
+                <th data-sort="joinedDate"><div class="th-content">Joined Date <i class="fa-solid fa-sort"></i></div></th>
+                
+                <!-- Blue Tint Appraisal & Service Period Header Block (Matching Screenshot Visual Layout) -->
+                <th class="th-appraisal-group" data-sort="firstAppraisalDate"><div class="th-content">1st Appraisal Date ( After One Month ) <i class="fa-solid fa-sort"></i></div></th>
+                <th class="th-appraisal-group" data-sort="servicePeriod"><div class="th-content">Service Period <i class="fa-solid fa-sort"></i></div></th>
+                <th class="th-appraisal-group" data-sort="firstAppraisalMarks"><div class="th-content">1st Appraisal Marks <i class="fa-solid fa-sort"></i></div></th>
+                <th class="th-appraisal-group" data-sort="secondAppraisalDate"><div class="th-content">2nd Appraisal Date ( After 3 Months ) <i class="fa-solid fa-sort"></i></div></th>
+                <th class="th-appraisal-group" data-sort="secondAppraisalMarks"><div class="th-content">2nd Appraisal Marks <i class="fa-solid fa-sort"></i></div></th>
+                <th class="th-appraisal-group" data-sort="resignDate"><div class="th-content">RESIGN DATE <i class="fa-solid fa-sort"></i></div></th>
+                <th class="th-appraisal-group" data-sort="confirmationLetter"><div class="th-content">Confirmation Letter <i class="fa-solid fa-sort"></i></div></th>
+
+                <!-- Job Placement Group -->
+                <th data-sort="designation"><div class="th-content">Designation <i class="fa-solid fa-sort"></i></div></th>
+                <th data-sort="jobRole"><div class="th-content">Job Role <i class="fa-solid fa-sort"></i></div></th>
+                <th data-sort="section"><div class="th-content">Section <i class="fa-solid fa-sort"></i></div></th>
+
+                <!-- Action Column -->
+                <th style="text-align: center;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody">
+              <!-- Dynamic Rows rendered via JS -->
+            </tbody>
+          </table>
+
+          <!-- Empty State Container -->
+          <div id="emptyState" class="empty-state" style="display: none;">
+            <div class="empty-icon"><i class="fa-solid fa-folder-open"></i></div>
+            <h3>No Labour Records Found</h3>
+            <p>Click "Register New Labour" to add a new record to the system.</p>
+          </div>
+        </div>
+
+        <div class="table-footer">
+          <div id="recordCountInfo">Showing 0 of 0 entries</div>
+          <div>Calculations auto-computed relative to joined date and current/resign date</div>
+        </div>
+      </main>
+    </div>
+
+    <!-- PAGE 2: APPRAISAL DUE DASHBOARD (2 SEPARATE CHARTS & DUE LABOURERS LISTS) -->
+    <div id="appraisalsPage" class="page-view" style="display: none;">
+      <!-- Appraisal Stats Summary -->
+      <section class="stats-grid" style="margin-bottom: 1.5rem;">
+        <div class="stat-card">
+          <div class="stat-icon orange">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="stat1stOverdue">0</div>
+            <div class="stat-label">1st Appraisal Overdue</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon blue">
+            <i class="fa-solid fa-clock"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="stat1stDueSoon">0</div>
+            <div class="stat-label">1st Appraisal Due Soon (30d)</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon purple">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="stat2ndOverdue">0</div>
+            <div class="stat-label">2nd Appraisal Overdue</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon green">
+            <i class="fa-solid fa-clock"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="stat2ndDueSoon">0</div>
+            <div class="stat-label">2nd Appraisal Due Soon (30d)</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Two Separate Charts & Tables Grid -->
+      <div class="appraisals-grid">
+
+        <!-- CHART 1: 1st Appraisal Due Analytics -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div class="chart-card-title" style="color: var(--accent-blue);">
+              <i class="fa-solid fa-chart-donut"></i> 1st Appraisal Status (1 Month After Join)
+            </div>
+            <span class="badge badge-pending" id="badgeTotal1stDue">0 Pending</span>
+          </div>
+
+          <div class="chart-canvas-container">
+            <canvas id="chartFirstAppraisal"></canvas>
+          </div>
+
+          <h4 style="font-size: 0.9rem; font-weight: 700; margin-top: 0.5rem; color: var(--text-main);">
+            <i class="fa-solid fa-list-check"></i> Labourers Due / Overdue for 1st Appraisal
+          </h4>
+
+          <div class="due-table-wrapper">
+            <table class="labour-table" style="font-size: 0.8rem;">
+              <thead>
+                <tr>
+                  <th>EPF</th>
+                  <th>Name</th>
+                  <th>1st Appraisal Date</th>
+                  <th>Status</th>
+                  <th>Marks</th>
+                  <th style="text-align: center;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="body1stAppraisalDue">
+                <!-- Rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- CHART 2: 2nd Appraisal Due Analytics -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div class="chart-card-title" style="color: var(--accent-purple);">
+              <i class="fa-solid fa-chart-pie"></i> 2nd Appraisal Status (3 Months After Join)
+            </div>
+            <span class="badge badge-pending" id="badgeTotal2ndDue">0 Pending</span>
+          </div>
+
+          <div class="chart-canvas-container">
+            <canvas id="chartSecondAppraisal"></canvas>
+          </div>
+
+          <h4 style="font-size: 0.9rem; font-weight: 700; margin-top: 0.5rem; color: var(--text-main);">
+            <i class="fa-solid fa-list-check"></i> Labourers Due / Overdue for 2nd Appraisal
+          </h4>
+
+          <div class="due-table-wrapper">
+            <table class="labour-table" style="font-size: 0.8rem;">
+              <thead>
+                <tr>
+                  <th>EPF</th>
+                  <th>Name</th>
+                  <th>2nd Appraisal Date</th>
+                  <th>Status</th>
+                  <th>Marks</th>
+                  <th style="text-align: center;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="body2ndAppraisalDue">
+                <!-- Rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- PAGE 3: RESIGNED LABOURS DIRECTORY VIEW -->
+    <div id="resignedPage" class="page-view" style="display: none;">
+      <!-- Stats Cards for Resigned Labours -->
+      <section class="stats-grid" style="margin-bottom: 1.5rem;">
+        <div class="stat-card">
+          <div class="stat-icon orange">
+            <i class="fa-solid fa-user-minus"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="statResignedPageTotal">0</div>
+            <div class="stat-label">Total Resigned Staff</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon blue">
+            <i class="fa-solid fa-building-user"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="statResignedActiveRatio">0%</div>
+            <div class="stat-label">Turnover Rate</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Control Toolbar for Resigned Page -->
+      <section class="toolbar">
+        <div class="toolbar-left">
+          <div class="search-wrapper">
+            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+            <input type="text" id="searchResignedInput" class="form-control" placeholder="Search by EPF or Name...">
+          </div>
+
+          <select id="filterResignedSection" class="form-control" style="width: auto;">
+            <option value="">-- All Sections --</option>
+          </select>
+
+          <select id="filterResignedGender" class="form-control" style="width: auto;">
+            <option value="">All Genders</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+          </select>
+
+          <button id="btnClearResignedFilters" class="btn btn-secondary" title="Clear Filters">
+            <i class="fa-solid fa-filter-circle-xmark"></i> Clear
+          </button>
+        </div>
+      </section>
+
+      <!-- Resigned Labour Table -->
+      <main class="table-container">
+        <div class="table-wrapper">
+          <table class="labour-table" id="resignedLabourTable">
+            <thead>
+              <tr>
+                <th><div class="th-content">EPF Number</div></th>
+                <th><div class="th-content">Gender</div></th>
+                <th><div class="th-content">Name with Initials</div></th>
+                <th><div class="th-content">Joined Date</div></th>
+                <th><div class="th-content">RESIGN DATE</div></th>
+                <th class="th-appraisal-group"><div class="th-content">Final Service Period</div></th>
+                <th><div class="th-content">1st Appraisal</div></th>
+                <th><div class="th-content">2nd Appraisal</div></th>
+                <th><div class="th-content">Designation</div></th>
+                <th><div class="th-content">Section</div></th>
+                <th style="text-align: center;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="resignedTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+
+          <div id="resignedEmptyState" class="empty-state" style="display: none;">
+            <div class="empty-icon"><i class="fa-solid fa-user-check" style="color: var(--accent-green);"></i></div>
+            <h3>No Resigned Labour Records</h3>
+            <p>No labourers have been marked as resigned.</p>
+          </div>
+        </div>
+
+        <div class="table-footer">
+          <div id="resignedRecordCountInfo">Showing 0 of 0 resigned entries</div>
+          <div>Archived resigned staff service records</div>
+        </div>
+      </main>
+    </div>
+
+    <!-- PAGE 4: SECTION-WISE LABOUR & RESIGNED ANALYTICS PAGE -->
+    <div id="analyticsPage" class="page-view" style="display: none;">
+      <!-- KPI Stats for Section Analytics -->
+      <section class="stats-grid" style="margin-bottom: 1.5rem;">
+        <div class="stat-card">
+          <div class="stat-icon blue">
+            <i class="fa-solid fa-sitemap"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="statAnalyticsSectionsCount">0</div>
+            <div class="stat-label">Active Sections</div>
+          </div>
+        </div>
+
+
+      </section>
+
+      <!-- Bar Charts Grid -->
+      <div class="appraisals-grid" style="margin-bottom: 1.5rem;">
+        <!-- CHART 1: Section-Wise Active Labour Bar Chart -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div class="chart-card-title" style="color: var(--accent-blue);">
+              <i class="fa-solid fa-chart-simple"></i> Section-Wise Active Labour Workforce
+            </div>
+            <span class="badge badge-ok">Active Workforce</span>
+          </div>
+          <div class="chart-canvas-container" style="height: 300px;">
+            <canvas id="chartSectionActive"></canvas>
+          </div>
+        </div>
+
+        <!-- CHART 2: Section-Wise Resigned Labour Bar Chart -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div class="chart-card-title" style="color: var(--accent-orange);">
+              <i class="fa-solid fa-chart-column"></i> Section-Wise Resigned Labour Breakdown
+            </div>
+            <span class="badge badge-resigned">Resigned Staff</span>
+          </div>
+          <div class="chart-canvas-container" style="height: 300px;">
+            <canvas id="chartSectionResigned"></canvas>
+          </div>
+        </div>
+      </div>
+
+
+
+      <!-- Detailed Section Data Table -->
+      <main class="table-container">
+        <div class="table-wrapper">
+          <table class="labour-table">
+            <thead>
+              <tr>
+                <th><div class="th-content">Section Name</div></th>
+                <th><div class="th-content">Active Labourers</div></th>
+                <th><div class="th-content">Resigned Labourers</div></th>
+                <th><div class="th-content">Total Registered</div></th>
+                <th><div class="th-content">Section Turnover Rate</div></th>
+              </tr>
+            </thead>
+            <tbody id="bodySectionBreakdown">
+              <!-- Dynamically rendered -->
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+
+    <!-- PAGE 5: USER MANAGEMENT & REGISTRATION PAGE -->
+    <div id="usersPage" class="page-view" style="display: none;">
+      <!-- User Stats Summary -->
+      <section class="stats-grid" style="margin-bottom: 1.5rem;">
+        <div class="stat-card">
+          <div class="stat-icon blue">
+            <i class="fa-solid fa-users-gear"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="statTotalUsers">0</div>
+            <div class="stat-label">Registered System Users</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon purple">
+            <i class="fa-solid fa-user-shield"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="statAdminCount">0</div>
+            <div class="stat-label">System Admins</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon green">
+            <i class="fa-solid fa-id-badge"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="statHRCount">0</div>
+            <div class="stat-label">HR Managers</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Control Toolbar for Users -->
+      <section class="toolbar">
+        <div class="toolbar-left">
+          <div class="search-wrapper">
+            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+            <input type="text" id="searchUserInput" class="form-control" placeholder="Search users by name, username, email...">
+          </div>
+
+          <select id="filterUserRole" class="form-control" style="width: auto;">
+            <option value="">All Roles</option>
+            <option value="Admin">Admin</option>
+            <option value="HR Staff">HR Staff</option>
+            <option value="Viewer">Viewer</option>
+          </select>
+        </div>
+
+        <div class="toolbar-right">
+          <button id="btnNewUser" class="btn btn-primary">
+            <i class="fa-solid fa-user-plus"></i> Register New User
+          </button>
+        </div>
+      </section>
+
+      <!-- Users Data Table -->
+      <main class="table-container" style="margin-top: 1.5rem;">
+        <div class="table-wrapper">
+          <table class="labour-table" id="usersTable">
+            <thead>
+              <tr>
+                <th><div class="th-content">Username</div></th>
+                <th><div class="th-content">Full Name</div></th>
+                <th><div class="th-content">Email Address</div></th>
+                <th><div class="th-content">Role / Access Level</div></th>
+                <th><div class="th-content">Created Date</div></th>
+                <th><div class="th-content">Account Status</div></th>
+                <th style="text-align: center;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="usersTableBody">
+              <!-- Dynamically Populated -->
+            </tbody>
+          </table>
+
+          <div id="usersEmptyState" class="empty-state" style="display: none;">
+            <div class="empty-icon"><i class="fa-solid fa-users-slash"></i></div>
+            <h3>No System Users Found</h3>
+            <p>Click "Register New User" to create a user account.</p>
+          </div>
+        </div>
+
+        <div class="table-footer">
+          <div id="userRecordCountInfo">Showing 0 of 0 users</div>
+          <div>Role-based access permissions apply</div>
+        </div>
+      </main>
+    </div>
+
+  </div>
+
+  <!-- Registration / Edit Modal -->
+  <div class="modal-backdrop" id="labourModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalTitle">
+          <i class="fa-solid fa-user-plus"></i> Labour Registration Form
+        </h2>
+        <button class="btn-icon" id="btnCloseModal">
+          <i class="fa-solid fa-xmark fa-lg"></i>
+        </button>
+      </div>
+
+      <form id="labourForm" class="modal-body">
+        <input type="hidden" id="editRecordId" value="">
+
+        <!-- Personal Info Section -->
+        <div>
+          <div class="form-section-title"><i class="fa-solid fa-id-card"></i> Personal Details</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="epfNumber">EPF Number <span class="required">*</span></label>
+              <input type="text" id="epfNumber" class="form-control" placeholder="e.g. 1301" required>
+            </div>
+
+            <div class="form-group">
+              <label for="gender">Gender <span class="required">*</span></label>
+              <select id="gender" class="form-control" required>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="nameWithInitials">Name with Initials <span class="required">*</span></label>
+              <input type="text" id="nameWithInitials" class="form-control" placeholder="e.g. S P S Madhusanka" required>
+            </div>
+
+            <div class="form-group">
+              <label for="firstName">First Name</label>
+              <input type="text" id="firstName" class="form-control" placeholder="e.g. Sameera">
+            </div>
+
+            <div class="form-group">
+              <label for="lastName">Last Name</label>
+              <input type="text" id="lastName" class="form-control" placeholder="e.g. Madhusanka">
+            </div>
+
+            <div class="form-group">
+              <label for="birthDate">Birth Date</label>
+              <input type="date" id="birthDate" class="form-control">
+            </div>
+          </div>
+        </div>
+
+        <!-- Joining & Role Info Section -->
+        <div>
+          <div class="form-section-title"><i class="fa-solid fa-briefcase"></i> Joined Date & Role Placement</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="joinedDate">Joined Date <span class="required">*</span></label>
+              <input type="date" id="joinedDate" class="form-control" required>
+            </div>
+
+            <div class="form-group">
+              <label for="designation">Designation</label>
+              <input type="text" id="designation" class="form-control" placeholder="e.g. Production Assistant, Helper, Supervisor" list="designationList">
+              <datalist id="designationList">
+                <option value="Production Assistant">
+                <option value="Production Helper">
+                <option value="Supervisor">
+                <option value="Driver">
+                <option value="Store Assistant">
+                <option value="Executive - Warehouse">
+              </datalist>
+            </div>
+
+            <div class="form-group">
+              <label for="jobRole">Job Role</label>
+              <input type="text" id="jobRole" class="form-control" placeholder="e.g. Daily Wages, Office Staff, Driver" list="jobRoleList">
+              <datalist id="jobRoleList">
+                <option value="Production Assistant">
+                <option value="Daily Wages">
+                <option value="Office Staff">
+                <option value="Driver">
+                <option value="Supervisor">
+                <option value="Hatcheting (Machine)">
+                <option value="Shavering (Normal)">
+              </datalist>
+            </div>
+
+            <div class="form-group">
+              <label for="section">Section</label>
+              <select id="section" class="form-control">
+                <option value="">-- Select Section --</option>
+                <option value="Yard C Wet C">Yard C Wet C</option>
+                <option value="Yard A">Yard A</option>
+                <option value="Wet A">Wet A</option>
+                <option value="Yard B">Yard B</option>
+                <option value="Wet B">Wet B</option>
+                <option value="Milk">Milk</option>
+                <option value="Dry">Dry</option>
+                <option value="Oil">Oil</option>
+                <option value="Maintanace">Maintanace</option>
+                <option value="55 Estate">55 Estate</option>
+                <option value="Driver">Driver</option>
+                <option value="Yara">Yara</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Appraisals, Resignation & Calculation Section -->
+        <div>
+          <div class="form-section-title"><i class="fa-solid fa-calculator"></i> Appraisals, Resignation & Calculations</div>
+          
+          <div class="calc-preview-banner" style="margin-bottom: 1rem;">
+            <div class="calc-preview-item">
+              <span class="calc-preview-label">Auto 1st Appraisal Date</span>
+              <span class="calc-preview-value" id="previewAppraisal1">-</span>
+            </div>
+            <div class="calc-preview-item">
+              <span class="calc-preview-label">Auto 2nd Appraisal Date</span>
+              <span class="calc-preview-value" id="previewAppraisal2">-</span>
+            </div>
+            <div class="calc-preview-item">
+              <span class="calc-preview-label">Calculated Service Period</span>
+              <span class="calc-preview-value" id="previewServicePeriod">0 Years, 0 Months, 0 Days</span>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="firstAppraisalDate">1st Appraisal Date (After 1 Month)</label>
+              <input type="date" id="firstAppraisalDate" class="form-control">
+            </div>
+
+            <div class="form-group">
+              <label for="firstAppraisalMarks">1st Appraisal Marks</label>
+              <input type="text" id="firstAppraisalMarks" class="form-control" placeholder="e.g. 85% or -">
+            </div>
+
+            <div class="form-group">
+              <label for="secondAppraisalDate">2nd Appraisal Date (After 3 Months)</label>
+              <input type="date" id="secondAppraisalDate" class="form-control">
+            </div>
+
+            <div class="form-group">
+              <label for="secondAppraisalMarks">2nd Appraisal Marks</label>
+              <input type="text" id="secondAppraisalMarks" class="form-control" placeholder="e.g. 90% or -">
+            </div>
+
+            <div class="form-group">
+              <label for="resignDate">RESIGN DATE (If Applicable)</label>
+              <input type="date" id="resignDate" class="form-control">
+            </div>
+
+            <div class="form-group">
+              <label for="confirmationLetter">Confirmation Letter</label>
+              <select id="confirmationLetter" class="form-control">
+                <option value="Pending">Pending</option>
+                <option value="Done">Done</option>
+                <option value="N/A">N/A</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </form>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="btnCancelModal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btnSaveLabour">
+          <i class="fa-solid fa-floppy-disk"></i> Save Labour Record
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mark as Resigned Modal -->
+  <div class="modal-backdrop" id="resignModal">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header">
+        <h2 class="modal-title" style="color: var(--accent-orange);">
+          <i class="fa-solid fa-user-minus"></i> Mark Labourer as Resigned
+        </h2>
+        <button class="btn-icon" id="btnCloseResignModal">
+          <i class="fa-solid fa-xmark fa-lg"></i>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <input type="hidden" id="resignLabourId" value="">
+        <div style="background: var(--bg-input); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+          <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Labour Details</div>
+          <div id="resignLabourInfo" style="font-weight: 700; font-size: 1.05rem; color: var(--text-main); margin-top: 0.25rem;">-</div>
+          <div id="resignLabourJoined" style="font-size: 0.825rem; color: var(--accent-blue); margin-top: 0.25rem;">Joined: -</div>
+        </div>
+
+        <div class="form-group" style="margin-top: 1rem;">
+          <label for="inputResignDateModal">Resign Date <span class="required">*</span></label>
+          <input type="date" id="inputResignDateModal" class="form-control" required>
+        </div>
+
+        <div class="calc-preview-banner" style="margin-top: 1rem;">
+          <div class="calc-preview-item">
+            <span class="calc-preview-label">Final Computed Service Period</span>
+            <span class="calc-preview-value" id="previewResignServicePeriod">0 Years, 0 Months, 0 Days</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="btnCancelResignModal">Cancel</button>
+        <button type="button" class="btn btn-warning" id="btnConfirmResignModal">
+          <i class="fa-solid fa-user-check"></i> Confirm Resignation
+        </button>
+      </div>
+    </div>
+  <!-- Register / Edit System User Modal -->
+  <div class="modal-backdrop" id="userModal">
+    <div class="modal-card" style="max-width: 520px;">
+      <div class="modal-header">
+        <h2 class="modal-title" id="userModalTitle">
+          <i class="fa-solid fa-user-plus"></i> Register New System User
+        </h2>
+        <button class="btn-icon" id="btnCloseUserModal">
+          <i class="fa-solid fa-xmark fa-lg"></i>
+        </button>
+      </div>
+
+      <form id="userForm" class="modal-body">
+        <input type="hidden" id="editUserId" value="">
+
+        <div class="form-group">
+          <label for="userFullName">Full Name <span class="required">*</span></label>
+          <input type="text" id="userFullName" class="form-control" placeholder="e.g. Kasun Fernando" required>
+        </div>
+
+        <div class="form-group">
+          <label for="userUsername">Username <span class="required">*</span></label>
+          <input type="text" id="userUsername" class="form-control" placeholder="e.g. kasunf" required>
+        </div>
+
+        <div class="form-group">
+          <label for="userEmail">Email Address</label>
+          <input type="email" id="userEmail" class="form-control" placeholder="e.g. kasun@rmp.lk">
+        </div>
+
+        <div class="form-group">
+          <label for="userPassword">Password <span class="required">*</span></label>
+          <input type="password" id="userPassword" class="form-control" placeholder="Set user account password" required>
+        </div>
+
+        <div class="form-group">
+          <label for="userRole">User Role / Permission Level <span class="required">*</span></label>
+          <select id="userRole" class="form-control" required>
+            <option value="Admin">Admin (Full Access & User Management)</option>
+            <option value="HR Staff">HR Staff (Labour Management & Appraisals)</option>
+            <option value="Viewer">Viewer (Read-Only Dashboards)</option>
+          </select>
+        </div>
+      </form>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="btnCancelUserModal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btnSaveUser">
+          <i class="fa-solid fa-floppy-disk"></i> Save User Account
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- JavaScript Modules -->
+  <script src="app.js"></script>
+</body>
+</html>
