@@ -3,16 +3,6 @@
  * App JavaScript Engine
  */
 
-// ---- Local data storage (via Electron main process, stored in a JSON file
-// on this laptop only — no internet, no cloud, nothing leaves this machine) ----
-async function remoteGet(key) {
-  return await window.electronAPI.getKV(key);
-}
-
-async function remoteSet(key, value) {
-  return await window.electronAPI.setKV(key, value);
-}
-
 // User & Authentication Storage Keys
 const USERS_STORAGE_KEY = 'HR_USERS_V1';
 const SESSION_STORAGE_KEY = 'HR_CURRENT_USER_V1';
@@ -48,8 +38,11 @@ const recordCountInfo = document.getElementById('recordCountInfo');
 const inputJoinedDate = document.getElementById('joinedDate');
 const inputResignDate = document.getElementById('resignDate');
 const inputFirstAppraisal = document.getElementById('firstAppraisalDate');
+const inputMedicalDate = document.getElementById('medicalDate');
+const inputMedicalStatus = document.getElementById('medicalStatus');
 const inputSecondAppraisal = document.getElementById('secondAppraisalDate');
 const previewAppraisal1 = document.getElementById('previewAppraisal1');
+const previewMedicalDate = document.getElementById('previewMedicalDate');
 const previewAppraisal2 = document.getElementById('previewAppraisal2');
 const previewServicePeriod = document.getElementById('previewServicePeriod');
 
@@ -72,22 +65,50 @@ const btnCloseModal = document.getElementById('btnCloseModal');
 const btnCancelModal = document.getElementById('btnCancelModal');
 const btnSaveLabour = document.getElementById('btnSaveLabour');
 const btnExportExcel = document.getElementById('btnExportExcel');
+const btnImportExcel = document.getElementById('btnImportExcel');
+
+// Excel Import Modal Elements
+const excelImportModal = document.getElementById('excelImportModal');
+const btnCloseImportModal = document.getElementById('btnCloseImportModal');
+const btnCancelImportModal = document.getElementById('btnCancelImportModal');
+const btnConfirmImport = document.getElementById('btnConfirmImport');
+const btnDownloadTemplate = document.getElementById('btnDownloadTemplate');
+const importDropZone = document.getElementById('importDropZone');
+const excelFileInput = document.getElementById('excelFileInput');
+const selectedFileName = document.getElementById('selectedFileName');
+const fileNameText = document.getElementById('fileNameText');
+const btnClearFile = document.getElementById('btnClearFile');
+const importStatsContainer = document.getElementById('importStatsContainer');
+const statImportTotal = document.getElementById('statImportTotal');
+const statImportNew = document.getElementById('statImportNew');
+const statImportExisting = document.getElementById('statImportExisting');
+const statImportInvalid = document.getElementById('statImportInvalid');
+const importPreviewContainer = document.getElementById('importPreviewContainer');
+const previewCountText = document.getElementById('previewCountText');
+const btnImportCount = document.getElementById('btnImportCount');
+const importPreviewTableBody = document.getElementById('importPreviewTableBody');
+
+let parsedImportRecords = [];
 
 // Tab & Dashboard Elements
 let chart1Instance = null;
 let chart2Instance = null;
+let chartMedicalInstance = null;
 let chartSectionActiveInstance = null;
 let chartSectionResignedInstance = null;
 let activePage = 'directoryPage';
 
 const tabDirectory = document.getElementById('tabDirectory');
 const tabAppraisals = document.getElementById('tabAppraisals');
+const tabMedical = document.getElementById('tabMedical');
 const tabResigned = document.getElementById('tabResigned');
 const tabDueBadge = document.getElementById('tabDueBadge');
+const tabMedicalBadge = document.getElementById('tabMedicalBadge');
 const tabResignedBadge = document.getElementById('tabResignedBadge');
 
 const directoryPage = document.getElementById('directoryPage');
 const appraisalsPage = document.getElementById('appraisalsPage');
+const medicalPage = document.getElementById('medicalPage');
 const resignedPage = document.getElementById('resignedPage');
 
 // Resign Modal Controls
@@ -98,59 +119,69 @@ const btnConfirmResignModal = document.getElementById('btnConfirmResignModal');
 const inputResignDateModal = document.getElementById('inputResignDateModal');
 
 // --- Initialization ---
-document.addEventListener('DOMContentLoaded', async () => {
-  try {
-    await loadRecordsFromStorage();
-    await loadUsersFromStorage();
-  } catch (e) {
-    console.error('Could not load local data', e);
-    showToast('Could not load saved data.', 'error');
-  }
+document.addEventListener('DOMContentLoaded', () => {
+  loadRecordsFromStorage();
+  loadUsersFromStorage();
   initEventListeners();
   checkCurrentSession();
   renderTable();
   updateSectionFilterOptions();
   updateAppraisalDueBadge();
+  updateMedicalDueBadge();
 });
 
 const STORAGE_KEY = 'HR_LABOUR_RECORDS_V1';
 
-async function loadRecordsFromStorage() {
-  const data = await remoteGet(STORAGE_KEY);
-  labourRecords = Array.isArray(data) ? data : [];
+function loadRecordsFromStorage() {
+  const data = localStorage.getItem(STORAGE_KEY);
+  if (data) {
+    try {
+      labourRecords = JSON.parse(data);
+      if (!Array.isArray(labourRecords)) labourRecords = [];
+      // Guarantee each record has a unique ID for deletion & editing
+      labourRecords.forEach((r, idx) => {
+        if (!r.id) {
+          r.id = 'REC_' + (r.epfNumber || Date.now()) + '_' + idx;
+        }
+        if (!r.medicalDate && r.joinedDate) {
+          r.medicalDate = addMonthsToDateStr(r.joinedDate, 2);
+        }
+        if (!r.medicalStatus) {
+          r.medicalStatus = 'Pending';
+        }
+      });
+    } catch (e) {
+      console.error('Failed to parse stored records', e);
+      labourRecords = [];
+    }
+  } else {
+    labourRecords = [];
+  }
 }
 
-async function saveRecordsToStorage() {
-  try {
-    await remoteSet(STORAGE_KEY, labourRecords);
-  } catch (e) {
-    console.error('Failed to save records', e);
-    showToast('Could not save data.', 'error');
-  }
+function saveRecordsToStorage() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(labourRecords));
   updateSectionFilterOptions();
   updateStats();
 }
 
 // --- Authentication & User Management Storage ---
-async function loadUsersFromStorage() {
-  const data = await remoteGet(USERS_STORAGE_KEY);
-  if (Array.isArray(data) && data.length) {
-    systemUsers = data;
-    if (!systemUsers.find(u => u.username === 'admin')) {
-      systemUsers.unshift(DEFAULT_ADMIN);
+function loadUsersFromStorage() {
+  const data = localStorage.getItem(USERS_STORAGE_KEY);
+  if (data) {
+    try {
+      systemUsers = JSON.parse(data);
+      // Ensure default admin account exists
+      if (!systemUsers.find(u => u.username === 'admin')) {
+        systemUsers.unshift(DEFAULT_ADMIN);
+      }
+    } catch (e) {
+      console.error('Failed to parse stored users', e);
+      systemUsers = [DEFAULT_ADMIN];
     }
   } else {
     systemUsers = [DEFAULT_ADMIN];
-    await remoteSet(USERS_STORAGE_KEY, systemUsers);
-  }
-}
-
-async function saveUsersToStorage() {
-  try {
-    await remoteSet(USERS_STORAGE_KEY, systemUsers);
-  } catch (e) {
-    console.error('Failed to save users', e);
-    showToast('Could not save data.', 'error');
+    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(systemUsers));
   }
 }
 
@@ -243,18 +274,26 @@ function applyRolePermissions() {
   const role = currentUser.role;
 
   const btnNewLabourEl = document.getElementById('btnNewLabour');
+  const btnImportExcelEl = document.getElementById('btnImportExcel');
   const tabUsersEl = document.getElementById('tabUsers');
+  const btnClearAllLabourEl = document.getElementById('btnClearAllLabour');
 
   if (role === 'Viewer') {
     if (btnNewLabourEl) btnNewLabourEl.style.display = 'none';
+    if (btnImportExcelEl) btnImportExcelEl.style.display = 'none';
     if (tabUsersEl) tabUsersEl.style.display = 'none';
+    if (btnClearAllLabourEl) btnClearAllLabourEl.style.display = 'none';
   } else if (role === 'HR Staff') {
     if (btnNewLabourEl) btnNewLabourEl.style.display = 'inline-flex';
+    if (btnImportExcelEl) btnImportExcelEl.style.display = 'inline-flex';
     if (tabUsersEl) tabUsersEl.style.display = 'none'; // Only Admin can manage system users
+    if (btnClearAllLabourEl) btnClearAllLabourEl.style.display = 'inline-flex';
   } else {
     // Admin: Full access
     if (btnNewLabourEl) btnNewLabourEl.style.display = 'inline-flex';
+    if (btnImportExcelEl) btnImportExcelEl.style.display = 'inline-flex';
     if (tabUsersEl) tabUsersEl.style.display = 'inline-flex';
+    if (btnClearAllLabourEl) btnClearAllLabourEl.style.display = 'inline-flex';
   }
 }
 
@@ -296,14 +335,19 @@ function renderUsersTable() {
         <td><span class="badge ${roleBadgeClass}">${escapeHtml(u.role)}</span></td>
         <td>${escapeHtml(u.createdAt || '-')}</td>
         <td><span class="badge badge-done">Active</span></td>
-        <td style="text-align: center;">
-          <button class="btn-icon btn-edit-user" data-id="${u.id}" title="Edit User">
-            <i class="fa-solid fa-pen-to-square"></i>
+        <td style="text-align: center; white-space: nowrap;">
+          <button type="button" class="btn-icon btn-edit-user" data-id="${u.id}" title="Edit User Account">
+            <i class="fa-solid fa-pen-to-square" style="color: var(--accent-blue); pointer-events: none;"></i>
           </button>
-          ${u.username === 'admin' ? '' : `
-          <button class="btn-icon btn-delete-user" data-id="${u.id}" title="Delete User" style="color: var(--accent-red);">
-            <i class="fa-solid fa-trash"></i>
-          </button>`}
+          ${u.username === 'admin' || u.id === 'usr_admin' ? `
+          <button type="button" class="btn-icon" disabled style="opacity: 0.35; cursor: not-allowed;" title="Protected System Admin Account">
+            <i class="fa-solid fa-lock" style="pointer-events: none;"></i>
+          </button>
+          ` : `
+          <button type="button" class="btn-icon btn-delete-user" data-id="${u.id}" title="Delete User Account" style="color: var(--accent-red);">
+            <i class="fa-solid fa-trash-can" style="pointer-events: none;"></i>
+          </button>
+          `}
         </td>
       `;
       tbody.appendChild(tr);
@@ -325,11 +369,85 @@ function updateUserStats() {
   if (statHRCount) statHRCount.textContent = systemUsers.filter(u => u.role === 'HR Staff').length;
 }
 
+// --- Strong Password Evaluation Engine ---
+function evaluatePasswordStrength(password) {
+  const p = password || '';
+  const hasLength = p.length >= 8;
+  const hasUpper = /[A-Z]/.test(p);
+  const hasLower = /[a-z]/.test(p);
+  const hasNumber = /[0-9]/.test(p);
+  const hasSymbol = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(p);
+
+  const validCount = [hasLength, hasUpper, hasLower, hasNumber, hasSymbol].filter(Boolean).length;
+
+  let score = 'weak';
+  if (validCount >= 5) score = 'strong';
+  else if (validCount >= 3) score = 'medium';
+
+  return {
+    hasLength,
+    hasUpper,
+    hasLower,
+    hasNumber,
+    hasSymbol,
+    validCount,
+    isStrong: validCount >= 4 && hasLength,
+    score
+  };
+}
+
+function updatePasswordStrengthUI(password) {
+  const fill = document.getElementById('pwMeterFill');
+  const labelStatus = document.getElementById('pwStrengthStatus');
+  const ruleLength = document.getElementById('ruleLength');
+  const ruleUpper = document.getElementById('ruleUpper');
+  const ruleLower = document.getElementById('ruleLower');
+  const ruleNumber = document.getElementById('ruleNumber');
+  const ruleSymbol = document.getElementById('ruleSymbol');
+
+  if (!fill || !labelStatus) return;
+
+  const result = evaluatePasswordStrength(password);
+
+  fill.className = 'pw-meter-fill ' + (password ? result.score : '');
+  if (!password) {
+    labelStatus.textContent = 'Enter password';
+    labelStatus.style.color = 'var(--text-muted)';
+  } else if (result.score === 'strong') {
+    labelStatus.textContent = 'Strong ✓';
+    labelStatus.style.color = 'var(--accent-green)';
+  } else if (result.score === 'medium') {
+    labelStatus.textContent = 'Medium';
+    labelStatus.style.color = 'var(--accent-orange)';
+  } else {
+    labelStatus.textContent = 'Too Weak';
+    labelStatus.style.color = 'var(--accent-red)';
+  }
+
+  const updateRuleItem = (el, isValid) => {
+    if (!el) return;
+    if (isValid) {
+      el.className = 'pw-rule-item valid';
+      el.querySelector('i').className = 'fa-solid fa-circle-check';
+    } else {
+      el.className = 'pw-rule-item';
+      el.querySelector('i').className = 'fa-solid fa-circle-xmark';
+    }
+  };
+
+  updateRuleItem(ruleLength, result.hasLength);
+  updateRuleItem(ruleUpper, result.hasUpper);
+  updateRuleItem(ruleLower, result.hasLower);
+  updateRuleItem(ruleNumber, result.hasNumber);
+  updateRuleItem(ruleSymbol, result.hasSymbol);
+}
+
 function openUserModal(isEdit = false, userRecord = null) {
   const modal = document.getElementById('userModal');
   const form = document.getElementById('userForm');
   const title = document.getElementById('userModalTitle');
   const editId = document.getElementById('editUserId');
+  const btnDeleteModal = document.getElementById('btnDeleteUserModal');
 
   if (!modal || !form) return;
   form.reset();
@@ -342,9 +460,21 @@ function openUserModal(isEdit = false, userRecord = null) {
     document.getElementById('userEmail').value = userRecord.email || '';
     document.getElementById('userPassword').value = userRecord.password;
     document.getElementById('userRole').value = userRecord.role;
+    updatePasswordStrengthUI(userRecord.password);
+
+    if (btnDeleteModal) {
+      if (userRecord.username === 'admin' || userRecord.id === 'usr_admin') {
+        btnDeleteModal.style.display = 'none';
+      } else {
+        btnDeleteModal.style.display = 'inline-flex';
+        btnDeleteModal.onclick = () => deleteUserRecord(userRecord.id);
+      }
+    }
   } else {
     title.innerHTML = '<i class="fa-solid fa-user-plus"></i> Register New System User';
     editId.value = '';
+    updatePasswordStrengthUI('');
+    if (btnDeleteModal) btnDeleteModal.style.display = 'none';
   }
   modal.classList.add('active');
 }
@@ -354,7 +484,8 @@ function closeUserModal() {
   if (modal) modal.classList.remove('active');
 }
 
-function saveUserRecord() {
+function saveUserRecord(e) {
+  if (e) e.preventDefault();
   const editId = document.getElementById('editUserId').value;
   const fullName = document.getElementById('userFullName').value.trim();
   const username = document.getElementById('userUsername').value.trim();
@@ -364,6 +495,13 @@ function saveUserRecord() {
 
   if (!fullName || !username || !password) {
     showToast('Please fill in all required user fields', 'error');
+    return;
+  }
+
+  // Validate Strong Password Method
+  const evalResult = evaluatePasswordStrength(password);
+  if (!evalResult.isStrong) {
+    showToast('Password is too weak! Must be 8+ characters with uppercase, lowercase, number, and symbol.', 'error');
     return;
   }
 
@@ -401,7 +539,7 @@ function saveUserRecord() {
     showToast(`User ${username} registered successfully!`, 'success');
   }
 
-  saveUsersToStorage();
+  localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(systemUsers));
   closeUserModal();
   renderUsersTable();
   updateUserStats();
@@ -411,18 +549,34 @@ function deleteUserRecord(userId) {
   const user = systemUsers.find(u => u.id === userId);
   if (!user) return;
 
-  if (user.username === 'admin') {
-    showToast('Default admin account cannot be deleted', 'error');
+  if (user.username === 'admin' || user.id === 'usr_admin') {
+    showToast('Default system admin account cannot be deleted', 'error');
     return;
   }
 
-  if (confirm(`Are you sure you want to delete user account "${user.username}"?`)) {
-    systemUsers = systemUsers.filter(u => u.id !== userId);
-    saveUsersToStorage();
-    renderUsersTable();
-    updateUserStats();
-    showToast(`User ${user.username} deleted`, 'info');
+  if (currentUser && currentUser.id === userId) {
+    showToast('You cannot delete your active logged-in user account', 'error');
+    return;
   }
+
+  openConfirmModal({
+    title: 'Delete User Account',
+    titleColor: '#ef4444',
+    iconClass: 'fa-solid fa-user-xmark',
+    iconColor: '#ef4444',
+    message: `Are you sure you want to permanently delete user account "${user.username}" (${user.fullName || 'No Name'})? This user will no longer be able to log in.`,
+    confirmText: 'Delete User Account',
+    confirmBtnStyle: 'background: #dc2626; border-color: #ef4444;',
+    onConfirm: () => {
+      systemUsers = systemUsers.filter(u => u.id !== userId);
+      localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(systemUsers));
+      closeConfirmModal();
+      closeUserModal();
+      renderUsersTable();
+      updateUserStats();
+      showToast(`User account "${user.username}" deleted successfully`, 'info');
+    }
+  });
 }
 
 // --- Date & Calculation Utilities ---
@@ -525,16 +679,23 @@ function updateLiveCalculations(forceRecalculateAppraisals = false) {
 
   if (joinedVal && joinedVal.split('-').length === 3) {
     const auto1st = addMonthsToDateStr(joinedVal, 1);
+    const autoMedical = addMonthsToDateStr(joinedVal, 2);
     const auto2nd = addMonthsToDateStr(joinedVal, 3);
 
     if (forceRecalculateAppraisals || !inputFirstAppraisal.value) {
       inputFirstAppraisal.value = auto1st;
+    }
+    if (inputMedicalDate && (forceRecalculateAppraisals || !inputMedicalDate.value)) {
+      inputMedicalDate.value = autoMedical;
     }
     if (forceRecalculateAppraisals || !inputSecondAppraisal.value) {
       inputSecondAppraisal.value = auto2nd;
     }
 
     previewAppraisal1.textContent = inputFirstAppraisal.value || auto1st || '-';
+    if (previewMedicalDate) {
+      previewMedicalDate.textContent = (inputMedicalDate && inputMedicalDate.value) || autoMedical || '-';
+    }
     previewAppraisal2.textContent = inputSecondAppraisal.value || auto2nd || '-';
 
     // Calculate Service Period
@@ -543,9 +704,13 @@ function updateLiveCalculations(forceRecalculateAppraisals = false) {
   } else {
     if (forceRecalculateAppraisals) {
       inputFirstAppraisal.value = '';
+      if (inputMedicalDate) inputMedicalDate.value = '';
       inputSecondAppraisal.value = '';
     }
     previewAppraisal1.textContent = inputFirstAppraisal.value || '-';
+    if (previewMedicalDate) {
+      previewMedicalDate.textContent = (inputMedicalDate && inputMedicalDate.value) || '-';
+    }
     previewAppraisal2.textContent = inputSecondAppraisal.value || '-';
     previewServicePeriod.textContent = calculateServicePeriod(joinedVal, resignVal);
   }
@@ -617,7 +782,7 @@ function renderTable() {
     
     filtered.forEach(record => {
       const tr = document.createElement('tr');
-      const servicePeriodStr = calculateServicePeriod(record.joinedDate, record.resignDate);
+      const servicePeriodStr = record.servicePeriod || calculateServicePeriod(record.joinedDate, record.resignDate);
       const confirmBadgeClass = record.confirmationLetter === 'Done' ? 'badge-ok' : 'badge-duesoon';
 
       tr.innerHTML = `
@@ -631,6 +796,7 @@ function renderTable() {
         
         <!-- Appraisal & Service Period (Blue Block Headers in UI) -->
         <td>${escapeHtml(record.firstAppraisalDate || '-')}</td>
+        <td>${escapeHtml(record.medicalDate || (record.joinedDate ? addMonthsToDateStr(record.joinedDate, 2) : '-'))}</td>
         <td><span class="cell-service-period">${escapeHtml(servicePeriodStr)}</span></td>
         <td style="text-align: center;">${escapeHtml(record.firstAppraisalMarks || '-')}</td>
         <td>${escapeHtml(record.secondAppraisalDate || '-')}</td>
@@ -645,14 +811,14 @@ function renderTable() {
 
         <!-- Actions -->
         <td style="text-align: center; white-space: nowrap;">
-          <button class="btn-icon btn-edit" data-id="${record.id}" title="Edit Record">
-            <i class="fa-solid fa-pen-to-square" style="color: var(--accent-blue);"></i>
+          <button type="button" class="btn-icon btn-edit" data-id="${escapeHtml(record.id || record.epfNumber)}" data-epf="${escapeHtml(record.epfNumber)}" title="Edit Record">
+            <i class="fa-solid fa-pen-to-square" style="color: var(--accent-blue); pointer-events: none;"></i>
           </button>
-          <button class="btn-icon btn-resign" data-id="${record.id}" title="Mark as Resigned">
-            <i class="fa-solid fa-user-minus" style="color: var(--accent-orange);"></i>
+          <button type="button" class="btn-icon btn-resign" data-id="${escapeHtml(record.id || record.epfNumber)}" data-epf="${escapeHtml(record.epfNumber)}" title="Mark as Resigned">
+            <i class="fa-solid fa-user-minus" style="color: var(--accent-orange); pointer-events: none;"></i>
           </button>
-          <button class="btn-icon btn-delete" data-id="${record.id}" title="Delete Record">
-            <i class="fa-solid fa-trash-can" style="color: var(--accent-red);"></i>
+          <button type="button" class="btn-icon btn-delete" data-id="${escapeHtml(record.id || record.epfNumber)}" data-epf="${escapeHtml(record.epfNumber)}" title="Delete Record">
+            <i class="fa-solid fa-trash-can" style="color: var(--accent-red); pointer-events: none;"></i>
           </button>
         </td>
       `;
@@ -684,7 +850,7 @@ function updateSectionFilterOptions() {
   const customSections = labourRecords.map(r => r.section).filter(Boolean);
   const sections = Array.from(new Set([...DEFAULT_SECTIONS, ...customSections])).sort();
 
-  [filterSection, document.getElementById('filterResignedSection')].forEach(selectEl => {
+  [filterSection, document.getElementById('filterResignedSection'), document.getElementById('filterMedicalSection')].forEach(selectEl => {
     if (!selectEl) return;
     const currentVal = selectEl.value;
     selectEl.innerHTML = '<option value="">-- All Sections --</option>';
@@ -715,6 +881,7 @@ function updateStats() {
   }
 
   updateAppraisalDueBadge();
+  updateMedicalDueBadge();
 }
 
 // --- Appraisal Due & Status Tracking ---
@@ -755,58 +922,40 @@ function updateAppraisalDueBadge() {
   }
 }
 
-function switchPage(pageId) {
-  activePage = pageId;
-  const dirPage = document.getElementById('directoryPage');
-  const appPage = document.getElementById('appraisalsPage');
-  const resPage = document.getElementById('resignedPage');
-  const anaPage = document.getElementById('analyticsPage');
+// --- Medical Due & Status Tracking ---
+function getMedicalDueStatus(dateStr, medicalStatus) {
+  const statusClean = String(medicalStatus || '').trim().toLowerCase();
+  if (statusClean === 'fit' || statusClean === 'completed' || statusClean === 'done' || statusClean === 'unfit') {
+    return 'Completed';
+  }
+  if (!dateStr) return 'No Date';
 
-  const tabDir = document.getElementById('tabDirectory');
-  const tabApp = document.getElementById('tabAppraisals');
-  const tabRes = document.getElementById('tabResigned');
-  const tabAna = document.getElementById('tabAnalytics');
+  const todayStr = formatDateToInput(new Date());
+  if (dateStr < todayStr) return 'Overdue';
 
-  if (pageId === 'directoryPage') {
-    if (dirPage) dirPage.style.display = 'block';
-    if (appPage) appPage.style.display = 'none';
-    if (resPage) resPage.style.display = 'none';
-    if (anaPage) anaPage.style.display = 'none';
-    if (tabDir) tabDir.classList.add('active');
-    if (tabApp) tabApp.classList.remove('active');
-    if (tabRes) tabRes.classList.remove('active');
-    if (tabAna) tabAna.classList.remove('active');
-    renderTable();
-  } else if (pageId === 'appraisalsPage') {
-    if (dirPage) dirPage.style.display = 'none';
-    if (appPage) appPage.style.display = 'block';
-    if (resPage) resPage.style.display = 'none';
-    if (anaPage) anaPage.style.display = 'none';
-    if (tabDir) tabDir.classList.remove('active');
-    if (tabApp) tabApp.classList.add('active');
-    if (tabRes) tabRes.classList.remove('active');
-    if (tabAna) tabAna.classList.remove('active');
-    renderAppraisalDashboard();
-  } else if (pageId === 'resignedPage') {
-    if (dirPage) dirPage.style.display = 'none';
-    if (appPage) appPage.style.display = 'none';
-    if (resPage) resPage.style.display = 'block';
-    if (anaPage) anaPage.style.display = 'none';
-    if (tabDir) tabDir.classList.remove('active');
-    if (tabApp) tabApp.classList.remove('active');
-    if (tabRes) tabRes.classList.add('active');
-    if (tabAna) tabAna.classList.remove('active');
-    renderResignedTable();
-  } else if (pageId === 'analyticsPage') {
-    if (dirPage) dirPage.style.display = 'none';
-    if (appPage) appPage.style.display = 'none';
-    if (resPage) resPage.style.display = 'none';
-    if (anaPage) anaPage.style.display = 'block';
-    if (tabDir) tabDir.classList.remove('active');
-    if (tabApp) tabApp.classList.remove('active');
-    if (tabRes) tabRes.classList.remove('active');
-    if (tabAna) tabAna.classList.add('active');
-    renderSectionAnalytics();
+  const today = new Date();
+  const targetDate = new Date(dateStr);
+  const diffTime = targetDate.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 3600 * 24));
+
+  if (diffDays <= 30) return 'Due Soon';
+  return 'Upcoming';
+}
+
+function updateMedicalDueBadge() {
+  const activeLabourers = labourRecords.filter(r => !r.resignDate);
+  let totalPendingDue = 0;
+
+  activeLabourers.forEach(r => {
+    const medDate = r.medicalDate || (r.joinedDate ? addMonthsToDateStr(r.joinedDate, 2) : '');
+    const status = getMedicalDueStatus(medDate, r.medicalStatus);
+    if (status === 'Overdue' || status === 'Due Soon') totalPendingDue++;
+  });
+
+  const tabBadge = document.getElementById('tabMedicalBadge');
+  if (tabBadge) {
+    tabBadge.textContent = totalPendingDue;
+    tabBadge.style.display = totalPendingDue > 0 ? 'inline-block' : 'none';
   }
 }
 
@@ -1007,7 +1156,7 @@ function renderResignedTable() {
 
   filtered.forEach(record => {
     const tr = document.createElement('tr');
-    const finalService = calculateServicePeriod(record.joinedDate, record.resignDate);
+    const finalService = record.servicePeriod || calculateServicePeriod(record.joinedDate, record.resignDate);
 
     tr.innerHTML = `
       <td class="cell-epf">${escapeHtml(record.epfNumber)}</td>
@@ -1021,14 +1170,14 @@ function renderResignedTable() {
       <td>${escapeHtml(record.designation || '-')}</td>
       <td>${escapeHtml(record.section || '-')}</td>
       <td style="text-align: center; white-space: nowrap;">
-        <button class="btn btn-sm btn-reactivate btn-reactivate-labour" data-id="${record.id}" title="Re-activate Labourer">
-          <i class="fa-solid fa-rotate-left"></i> Re-activate
+        <button type="button" class="btn btn-sm btn-reactivate btn-reactivate-labour" data-id="${escapeHtml(record.id || record.epfNumber)}" data-epf="${escapeHtml(record.epfNumber)}" title="Re-activate Labourer">
+          <i class="fa-solid fa-rotate-left" style="pointer-events: none;"></i> Re-activate
         </button>
-        <button class="btn-icon btn-edit" data-id="${record.id}" title="Edit Record">
-          <i class="fa-solid fa-pen-to-square" style="color: var(--accent-blue);"></i>
+        <button type="button" class="btn-icon btn-edit" data-id="${escapeHtml(record.id || record.epfNumber)}" data-epf="${escapeHtml(record.epfNumber)}" title="Edit Record">
+          <i class="fa-solid fa-pen-to-square" style="color: var(--accent-blue); pointer-events: none;"></i>
         </button>
-        <button class="btn-icon btn-delete" data-id="${record.id}" title="Delete Record">
-          <i class="fa-solid fa-trash-can" style="color: var(--accent-red);"></i>
+        <button type="button" class="btn-icon btn-delete" data-id="${escapeHtml(record.id || record.epfNumber)}" data-epf="${escapeHtml(record.epfNumber)}" title="Delete Record">
+          <i class="fa-solid fa-trash-can" style="color: var(--accent-red); pointer-events: none;"></i>
         </button>
       </td>
     `;
@@ -1184,13 +1333,362 @@ function renderDueTable(containerId, list, type) {
   });
 }
 
+// ==========================================================================
+// --- MEDICAL DUE DASHBOARD & EXAMINATION ENGINE ---
+// ==========================================================================
+
+function renderMedicalDashboard() {
+  const activeLabourers = labourRecords.filter(r => !r.resignDate);
+
+  let overdueCount = 0;
+  let dueSoonCount = 0;
+  let completedCount = 0;
+  let upcomingCount = 0;
+
+  activeLabourers.forEach(r => {
+    const medDate = r.medicalDate || (r.joinedDate ? addMonthsToDateStr(r.joinedDate, 2) : '');
+    const st = getMedicalDueStatus(medDate, r.medicalStatus);
+    if (st === 'Overdue') overdueCount++;
+    else if (st === 'Due Soon') dueSoonCount++;
+    else if (st === 'Completed') completedCount++;
+    else if (st === 'Upcoming') upcomingCount++;
+  });
+
+  // KPI Stats Cards
+  const elOverdue = document.getElementById('statMedicalOverdue');
+  const elDueSoon = document.getElementById('statMedicalDueSoon');
+  const elCompleted = document.getElementById('statMedicalCompleted');
+  const elUpcoming = document.getElementById('statMedicalUpcoming');
+  const badgeDue = document.getElementById('badgeTotalMedicalDue');
+
+  if (elOverdue) elOverdue.textContent = overdueCount;
+  if (elDueSoon) elDueSoon.textContent = dueSoonCount;
+  if (elCompleted) elCompleted.textContent = completedCount;
+  if (elUpcoming) elUpcoming.textContent = upcomingCount;
+  if (badgeDue) badgeDue.textContent = `${overdueCount + dueSoonCount} Action Required`;
+
+  // Render Medical Chart
+  renderMedicalChart(overdueCount, dueSoonCount, completedCount, upcomingCount);
+
+  // Filter Table Records
+  const searchQ = (document.getElementById('searchMedicalInput')?.value || '').toLowerCase().trim();
+  const filterDue = document.getElementById('filterMedicalDueStatus')?.value || '';
+  const filterSec = document.getElementById('filterMedicalSection')?.value || '';
+
+  const filteredLabourers = activeLabourers.filter(r => {
+    const medDate = r.medicalDate || (r.joinedDate ? addMonthsToDateStr(r.joinedDate, 2) : '');
+    const st = getMedicalDueStatus(medDate, r.medicalStatus);
+
+    // Search query
+    const matchQuery = !searchQ || [
+      r.epfNumber,
+      r.nameWithInitials,
+      r.firstName,
+      r.lastName,
+      r.section,
+      r.designation,
+      r.jobRole,
+      r.medicalStatus
+    ].some(val => (val || '').toLowerCase().includes(searchQ));
+
+    // Section filter
+    const matchSec = !filterSec || r.section === filterSec;
+
+    // Due status filter
+    let matchDue = true;
+    if (filterDue === 'pendingAction') {
+      matchDue = (st === 'Overdue' || st === 'Due Soon');
+    } else if (filterDue === 'Overdue') {
+      matchDue = (st === 'Overdue');
+    } else if (filterDue === 'Due Soon') {
+      matchDue = (st === 'Due Soon');
+    } else if (filterDue === 'Completed') {
+      matchDue = (st === 'Completed');
+    } else if (filterDue === 'Upcoming') {
+      matchDue = (st === 'Upcoming');
+    }
+
+    return matchQuery && matchSec && matchDue;
+  });
+
+  // Sort filtered list: Overdue first, then Due Soon, then Upcoming, then Completed
+  filteredLabourers.sort((a, b) => {
+    const dateA = a.medicalDate || (a.joinedDate ? addMonthsToDateStr(a.joinedDate, 2) : '');
+    const dateB = b.medicalDate || (b.joinedDate ? addMonthsToDateStr(b.joinedDate, 2) : '');
+    const stA = getMedicalDueStatus(dateA, a.medicalStatus);
+    const stB = getMedicalDueStatus(dateB, b.medicalStatus);
+
+    const priority = { 'Overdue': 1, 'Due Soon': 2, 'Upcoming': 3, 'Completed': 4, 'No Date': 5 };
+    if ((priority[stA] || 99) !== (priority[stB] || 99)) {
+      return (priority[stA] || 99) - (priority[stB] || 99);
+    }
+    return (dateA || '').localeCompare(dateB || '');
+  });
+
+  const countBadge = document.getElementById('medicalListCountBadge');
+  if (countBadge) {
+    countBadge.textContent = `Showing ${filteredLabourers.length} of ${activeLabourers.length}`;
+  }
+
+  // Render Table
+  renderMedicalDueTable(filteredLabourers);
+}
+
+function renderMedicalChart(overdue, dueSoon, completed, upcoming) {
+  const canvas = document.getElementById('chartMedicalStatus');
+  if (!canvas || typeof Chart === 'undefined') return;
+  const ctx = canvas.getContext('2d');
+  if (chartMedicalInstance) chartMedicalInstance.destroy();
+
+  chartMedicalInstance = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Overdue', 'Due Soon (30d)', 'Completed / Fit', 'Upcoming (>30d)'],
+      datasets: [{
+        data: [overdue, dueSoon, completed, upcoming],
+        backgroundColor: ['#ef4444', '#f59e0b', '#10b981', '#06b6d4'],
+        borderWidth: 2,
+        borderColor: '#1e293b'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: { color: '#f8fafc', font: { family: 'Plus Jakarta Sans', size: 12 } }
+        }
+      }
+    }
+  });
+}
+
+function renderMedicalDueTable(list) {
+  const tbody = document.getElementById('bodyMedicalDue');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  if (list.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+          <i class="fa-solid fa-circle-check" style="color: var(--accent-green); font-size: 1.5rem; margin-bottom: 0.5rem; display: block;"></i>
+          No medical records match the selected filter criteria!
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  const today = new Date();
+
+  list.forEach(r => {
+    const medDate = r.medicalDate || (r.joinedDate ? addMonthsToDateStr(r.joinedDate, 2) : '');
+    const dueStatus = getMedicalDueStatus(medDate, r.medicalStatus);
+
+    let statusBadge = '';
+    if (dueStatus === 'Overdue') {
+      const targetDate = new Date(medDate);
+      const daysOverdue = Math.max(1, Math.floor((today.getTime() - targetDate.getTime()) / (1000 * 3600 * 24)));
+      statusBadge = `<span class="badge badge-overdue"><i class="fa-solid fa-triangle-exclamation"></i> Overdue (${daysOverdue}d)</span>`;
+    } else if (dueStatus === 'Due Soon') {
+      const targetDate = new Date(medDate);
+      const daysLeft = Math.max(0, Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 3600 * 24)));
+      statusBadge = `<span class="badge badge-duesoon"><i class="fa-solid fa-clock"></i> Due in ${daysLeft}d</span>`;
+    } else if (dueStatus === 'Completed') {
+      const icon = (r.medicalStatus === 'Unfit') ? 'fa-triangle-exclamation' : 'fa-circle-check';
+      const badgeCls = (r.medicalStatus === 'Unfit') ? 'badge-unfit' : 'badge-fit';
+      statusBadge = `<span class="badge ${badgeCls}"><i class="fa-solid ${icon}"></i> ${escapeHtml(r.medicalStatus || 'Completed')}</span>`;
+    } else {
+      statusBadge = `<span class="badge badge-upcoming"><i class="fa-solid fa-calendar"></i> Upcoming</span>`;
+    }
+
+    let resultBadge = '';
+    const res = (r.medicalStatus || 'Pending').toLowerCase();
+    if (res === 'fit') {
+      resultBadge = '<span class="badge badge-fit"><i class="fa-solid fa-check"></i> Fit</span>';
+    } else if (res === 'unfit') {
+      resultBadge = '<span class="badge badge-unfit"><i class="fa-solid fa-xmark"></i> Unfit</span>';
+    } else if (res === 'completed') {
+      resultBadge = '<span class="badge badge-ok"><i class="fa-solid fa-check-double"></i> Cleared</span>';
+    } else {
+      resultBadge = '<span class="badge badge-pending">Pending</span>';
+    }
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="cell-epf"><strong>${escapeHtml(r.epfNumber)}</strong></td>
+      <td><strong>${escapeHtml(r.nameWithInitials)}</strong></td>
+      <td>${escapeHtml(r.section || '-')}</td>
+      <td>${escapeHtml(r.joinedDate || '-')}</td>
+      <td><span style="font-weight: 700; color: #38bdf8;">${escapeHtml(medDate || '-')}</span></td>
+      <td>${statusBadge}</td>
+      <td>${resultBadge}</td>
+      <td style="text-align: center; white-space: nowrap;">
+        <button type="button" class="btn btn-primary btn-mark-medical" data-id="${escapeHtml(r.id || r.epfNumber)}" style="padding: 0.25rem 0.65rem; font-size: 0.725rem; background: linear-gradient(135deg, #0d9488, #0f766e); border-color: #14b8a6;">
+          <i class="fa-solid fa-notes-medical" style="pointer-events: none;"></i> Mark Medical
+        </button>
+        <button type="button" class="btn-icon btn-edit-medical" data-id="${escapeHtml(r.id || r.epfNumber)}" title="Edit Labour Details">
+          <i class="fa-solid fa-pen-to-square" style="color: var(--accent-blue); pointer-events: none;"></i>
+        </button>
+        <button type="button" class="btn btn-warning btn-resign-medical" data-id="${escapeHtml(r.id || r.epfNumber)}" style="padding: 0.25rem 0.6rem; font-size: 0.725rem;" title="Mark as Resigned">
+          <i class="fa-solid fa-user-minus" style="pointer-events: none;"></i>
+        </button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function openMedicalModal(recordId) {
+  const record = labourRecords.find(r => 
+    (r.id && (r.id === recordId || String(r.id) === String(recordId))) ||
+    (r.epfNumber && String(r.epfNumber) === String(recordId))
+  );
+  if (!record) return;
+
+  const medModal = document.getElementById('medicalRecordModal');
+  const idInput = document.getElementById('medicalRecordLabourId');
+  const infoEl = document.getElementById('medicalModalLabourInfo');
+  const joinedEl = document.getElementById('medicalModalJoined');
+  const dueEl = document.getElementById('medicalModalDueDate');
+  const dateInput = document.getElementById('inputMedicalModalDate');
+  const resultSelect = document.getElementById('selectMedicalModalResult');
+  const clinicInput = document.getElementById('inputMedicalModalClinic');
+  const notesInput = document.getElementById('inputMedicalModalNotes');
+
+  if (idInput) idInput.value = record.id || record.epfNumber;
+  if (infoEl) infoEl.textContent = `EPF ${record.epfNumber} - ${record.nameWithInitials} (${record.section || 'General'})`;
+  if (joinedEl) joinedEl.innerHTML = `<i class="fa-solid fa-calendar-day" style="color: var(--accent-blue);"></i> Joined: ${escapeHtml(record.joinedDate || '-')}`;
+
+  const computedDue = record.medicalDate || (record.joinedDate ? addMonthsToDateStr(record.joinedDate, 2) : '-');
+  if (dueEl) dueEl.innerHTML = `<i class="fa-solid fa-clock" style="color: var(--accent-orange);"></i> 2-Month Due Date: ${escapeHtml(computedDue)}`;
+
+  const todayStr = formatDateToInput(new Date());
+  if (dateInput) dateInput.value = record.medicalDate || computedDue || todayStr;
+  if (resultSelect) resultSelect.value = record.medicalStatus && record.medicalStatus !== 'Pending' ? record.medicalStatus : 'Fit';
+  if (clinicInput) clinicInput.value = record.medicalClinic || '';
+  if (notesInput) notesInput.value = record.medicalNotes || '';
+
+  if (medModal) medModal.classList.add('active');
+}
+
+function closeMedicalModal() {
+  const medModal = document.getElementById('medicalRecordModal');
+  if (medModal) medModal.classList.remove('active');
+}
+
+function saveMedicalRecordModal() {
+  const idInput = document.getElementById('medicalRecordLabourId');
+  if (!idInput) return;
+  const recordId = idInput.value;
+
+  const record = labourRecords.find(r => 
+    (r.id && (r.id === recordId || String(r.id) === String(recordId))) ||
+    (r.epfNumber && String(r.epfNumber) === String(recordId))
+  );
+  if (!record) {
+    showToast('Record not found!', 'error');
+    return;
+  }
+
+  const examDate = document.getElementById('inputMedicalModalDate')?.value;
+  const examResult = document.getElementById('selectMedicalModalResult')?.value || 'Fit';
+  const clinic = document.getElementById('inputMedicalModalClinic')?.value.trim() || '';
+  const notes = document.getElementById('inputMedicalModalNotes')?.value.trim() || '';
+
+  if (!examDate) {
+    showToast('Please select a Medical Examination Date', 'error');
+    return;
+  }
+
+  record.medicalDate = examDate;
+  record.medicalStatus = examResult;
+  record.medicalClinic = clinic;
+  record.medicalNotes = notes;
+  record.updatedAt = new Date().toISOString();
+
+  saveRecordsToStorage();
+  closeMedicalModal();
+  renderTable();
+  updateMedicalDueBadge();
+  updateStats();
+  if (activePage === 'medicalPage') renderMedicalDashboard();
+
+  showToast(`Medical checkup recorded for EPF ${record.epfNumber} (${examResult})!`, 'success');
+}
+
+function exportMedicalReport() {
+  if (typeof XLSX === 'undefined') {
+    showToast('Excel library loading, please try again.', 'error');
+    return;
+  }
+
+  const activeLabourers = labourRecords.filter(r => !r.resignDate);
+  if (activeLabourers.length === 0) {
+    showToast('No active labourers to export for medical checkups!', 'error');
+    return;
+  }
+
+  const reportData = activeLabourers.map(r => {
+    const medDate = r.medicalDate || (r.joinedDate ? addMonthsToDateStr(r.joinedDate, 2) : '');
+    const dueSt = getMedicalDueStatus(medDate, r.medicalStatus);
+
+    return {
+      'EPF Number': r.epfNumber || '',
+      'Gender': r.gender || '',
+      'Name with Initials': r.nameWithInitials || '',
+      'Section': r.section || '',
+      'Designation': r.designation || '',
+      'Joined Date': r.joinedDate || '',
+      'Medical Due Date ( 2 Months )': medDate,
+      'Medical Due Status': dueSt,
+      'Medical Result': r.medicalStatus || 'Pending',
+      'Clinic / Hospital': r.medicalClinic || '',
+      'Remarks': r.medicalNotes || ''
+    };
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(reportData);
+  worksheet['!cols'] = [
+    { wch: 12 }, // EPF Number
+    { wch: 8 },  // Gender
+    { wch: 28 }, // Name with Initials
+    { wch: 18 }, // Section
+    { wch: 22 }, // Designation
+    { wch: 14 }, // Joined Date
+    { wch: 28 }, // Medical Due Date ( 2 Months )
+    { wch: 18 }, // Medical Due Status
+    { wch: 16 }, // Medical Result
+    { wch: 24 }, // Clinic / Hospital
+    { wch: 30 }  // Remarks
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Medical Due Report');
+  const todayStr = formatDateToInput(new Date());
+  XLSX.writeFile(workbook, `Medical_Checkup_Due_Report_${todayStr}.xlsx`);
+  showToast('Medical checkup report exported to Excel!', 'success');
+}
+
 // --- Modal Handlers ---
 function openModal(isEdit = false, recordObj = null) {
   labourForm.reset();
+  const btnDeleteModal = document.getElementById('btnDeleteLabourModal');
   
   if (isEdit && recordObj) {
     modalTitle.innerHTML = `<i class="fa-solid fa-user-pen"></i> Edit Labour Record (EPF: ${escapeHtml(recordObj.epfNumber)})`;
-    editRecordId.value = recordObj.id;
+    editRecordId.value = recordObj.id || recordObj.epfNumber;
+
+    if (btnDeleteModal) {
+      if (currentUser && currentUser.role === 'Viewer') {
+        btnDeleteModal.style.display = 'none';
+      } else {
+        btnDeleteModal.style.display = 'inline-flex';
+        btnDeleteModal.onclick = () => handleDeleteRecord(recordObj.id, recordObj.epfNumber);
+      }
+    }
 
     document.getElementById('epfNumber').value = recordObj.epfNumber || '';
     document.getElementById('gender').value = recordObj.gender || 'Male';
@@ -1202,6 +1700,12 @@ function openModal(isEdit = false, recordObj = null) {
     document.getElementById('joinedDate').value = joined;
     document.getElementById('firstAppraisalDate').value = recordObj.firstAppraisalDate || (joined ? addMonthsToDateStr(joined, 1) : '');
     document.getElementById('firstAppraisalMarks').value = recordObj.firstAppraisalMarks || '-';
+    if (document.getElementById('medicalDate')) {
+      document.getElementById('medicalDate').value = recordObj.medicalDate || (joined ? addMonthsToDateStr(joined, 2) : '');
+    }
+    if (document.getElementById('medicalStatus')) {
+      document.getElementById('medicalStatus').value = recordObj.medicalStatus || 'Pending';
+    }
     document.getElementById('secondAppraisalDate').value = recordObj.secondAppraisalDate || (joined ? addMonthsToDateStr(joined, 3) : '');
     document.getElementById('secondAppraisalMarks').value = recordObj.secondAppraisalMarks || '-';
     document.getElementById('resignDate').value = recordObj.resignDate || '';
@@ -1219,6 +1723,9 @@ function openModal(isEdit = false, recordObj = null) {
   } else {
     modalTitle.innerHTML = `<i class="fa-solid fa-user-plus"></i> Labour Registration Form`;
     editRecordId.value = '';
+    if (document.getElementById('medicalDate')) document.getElementById('medicalDate').value = '';
+    if (document.getElementById('medicalStatus')) document.getElementById('medicalStatus').value = 'Pending';
+    if (btnDeleteModal) btnDeleteModal.style.display = 'none';
   }
 
   updateLiveCalculations(false);
@@ -1251,9 +1758,12 @@ function handleSaveRecord() {
 
   let firstAppraisalDate = document.getElementById('firstAppraisalDate').value;
   let secondAppraisalDate = document.getElementById('secondAppraisalDate').value;
+  let medicalDate = document.getElementById('medicalDate')?.value || '';
+  const medicalStatus = document.getElementById('medicalStatus')?.value || 'Pending';
 
   if (joinedDate) {
     if (!firstAppraisalDate) firstAppraisalDate = addMonthsToDateStr(joinedDate, 1);
+    if (!medicalDate) medicalDate = addMonthsToDateStr(joinedDate, 2);
     if (!secondAppraisalDate) secondAppraisalDate = addMonthsToDateStr(joinedDate, 3);
   }
 
@@ -1268,6 +1778,8 @@ function handleSaveRecord() {
     joinedDate,
     firstAppraisalDate,
     firstAppraisalMarks: document.getElementById('firstAppraisalMarks').value.trim() || '-',
+    medicalDate,
+    medicalStatus,
     secondAppraisalDate,
     secondAppraisalMarks: document.getElementById('secondAppraisalMarks').value.trim() || '-',
     resignDate: document.getElementById('resignDate').value,
@@ -1282,7 +1794,7 @@ function handleSaveRecord() {
     // Update existing
     const index = labourRecords.findIndex(r => r.id === recordId);
     if (index !== -1) {
-      labourRecords[index] = recordData;
+      labourRecords[index] = { ...labourRecords[index], ...recordData };
       showToast(`Labour record for EPF ${epfNumber} updated successfully!`, 'success');
     }
   } else {
@@ -1293,25 +1805,199 @@ function handleSaveRecord() {
 
   saveRecordsToStorage();
   renderTable();
+  updateMedicalDueBadge();
   if (activePage === 'appraisalsPage') {
     renderAppraisalDashboard();
+  }
+  if (activePage === 'medicalPage') {
+    renderMedicalDashboard();
   }
   closeModal();
 }
 
-function handleDeleteRecord(id) {
-  const record = labourRecords.find(r => r.id === id);
-  if (!record) return;
+// --- In-App Confirmation Modal Engine (Replaces Browser Dialogs) ---
+let pendingConfirmCallback = null;
 
-  if (confirm(`Are you sure you want to delete labour record for EPF ${record.epfNumber} (${record.nameWithInitials})?`)) {
-    labourRecords = labourRecords.filter(r => r.id !== id);
-    saveRecordsToStorage();
-    renderTable();
-    if (activePage === 'appraisalsPage') {
-      renderAppraisalDashboard();
-    }
-    showToast(`Record EPF ${record.epfNumber} deleted!`, 'success');
+function openConfirmModal({
+  title = 'Confirm Deletion',
+  titleColor = '#ef4444',
+  iconClass = 'fa-solid fa-triangle-exclamation',
+  iconColor = '#ef4444',
+  message = 'Are you sure you want to proceed? This action cannot be undone.',
+  labourRecord = null,
+  clearAllCount = null,
+  confirmText = 'Confirm Delete',
+  confirmBtnStyle = 'background: #dc2626; border-color: #ef4444;',
+  onConfirm = null
+}) {
+  const modal = document.getElementById('confirmActionModal');
+  const titleTextEl = document.getElementById('confirmModalTitleText');
+  const titleEl = document.getElementById('confirmModalTitle');
+  const iconEl = document.getElementById('confirmModalIcon');
+  const msgEl = document.getElementById('confirmModalMessage');
+  const singleCard = document.getElementById('confirmLabourDetailsCard');
+  const clearCard = document.getElementById('confirmClearAllCard');
+  const btnExecute = document.getElementById('btnExecuteConfirmModal');
+  const btnExecuteText = document.getElementById('btnExecuteConfirmText');
+
+  if (!modal) return;
+
+  pendingConfirmCallback = onConfirm;
+
+  if (titleTextEl) titleTextEl.textContent = title;
+  if (titleEl) titleEl.style.color = titleColor;
+  if (iconEl) {
+    iconEl.className = iconClass;
+    iconEl.style.color = iconColor;
   }
+  if (msgEl) msgEl.textContent = message;
+
+  if (labourRecord) {
+    if (singleCard) {
+      singleCard.style.display = 'flex';
+      const nameEl = document.getElementById('confirmLabourName');
+      const metaEl = document.getElementById('confirmLabourMeta');
+      if (nameEl) {
+        nameEl.textContent = labourRecord.nameWithInitials || labourRecord.firstName || `EPF ${labourRecord.epfNumber}`;
+      }
+      if (metaEl) {
+        metaEl.innerHTML = `
+          <span class="badge" style="background: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.4);"><i class="fa-solid fa-id-badge"></i> EPF: ${escapeHtml(labourRecord.epfNumber)}</span>
+          <span class="badge" style="background: rgba(148, 163, 184, 0.15); color: #cbd5e1;"><i class="fa-solid fa-building"></i> ${escapeHtml(labourRecord.section || 'General')}</span>
+          <span class="badge" style="background: rgba(148, 163, 184, 0.15); color: #cbd5e1;"><i class="fa-solid fa-briefcase"></i> ${escapeHtml(labourRecord.designation || 'Labourer')}</span>
+          <span class="badge" style="background: rgba(148, 163, 184, 0.15); color: #cbd5e1;"><i class="fa-solid fa-calendar-day"></i> Joined: ${escapeHtml(labourRecord.joinedDate || '-')}</span>
+        `;
+      }
+    }
+    if (clearCard) clearCard.style.display = 'none';
+  } else if (clearAllCount !== null && clearAllCount !== undefined) {
+    if (singleCard) singleCard.style.display = 'none';
+    if (clearCard) {
+      clearCard.style.display = 'block';
+      const countEl = document.getElementById('confirmClearAllCount');
+      if (countEl) countEl.textContent = clearAllCount;
+    }
+  } else {
+    if (singleCard) singleCard.style.display = 'none';
+    if (clearCard) clearCard.style.display = 'none';
+  }
+
+  if (btnExecuteText) btnExecuteText.textContent = confirmText;
+  if (btnExecute && confirmBtnStyle) {
+    btnExecute.setAttribute('style', `padding: 0.6rem 1.2rem; color: #ffffff; font-weight: 700; display: inline-flex; align-items: center; gap: 0.5rem; ${confirmBtnStyle}`);
+  }
+
+  modal.classList.add('active');
+}
+
+function closeConfirmModal() {
+  const modal = document.getElementById('confirmActionModal');
+  if (modal) modal.classList.remove('active');
+  pendingConfirmCallback = null;
+}
+
+function handleDeleteRecord(identifier, epfFallback) {
+  if (currentUser && currentUser.role === 'Viewer') {
+    showToast('Viewer accounts have read-only access and cannot delete records.', 'error');
+    return;
+  }
+
+  const cleanId = identifier != null ? String(identifier).trim() : '';
+  const cleanEpf = epfFallback != null ? String(epfFallback).trim() : '';
+
+  const record = labourRecords.find(r => {
+    if (!r) return false;
+    const rId = r.id != null ? String(r.id).trim() : '';
+    const rEpf = r.epfNumber != null ? String(r.epfNumber).trim() : '';
+    if (cleanId && (rId === cleanId || rEpf === cleanId)) return true;
+    if (cleanEpf && (rEpf === cleanEpf || rId === cleanEpf)) return true;
+    return false;
+  });
+
+  if (!record) {
+    showToast('Labour record could not be found to delete.', 'error');
+    return;
+  }
+
+  const targetId = record.id != null ? String(record.id).trim() : '';
+  const targetEpf = record.epfNumber != null ? String(record.epfNumber).trim() : '';
+  const targetName = record.nameWithInitials || record.firstName || `EPF ${targetEpf}`;
+
+  openConfirmModal({
+    title: 'Delete Labour Record',
+    titleColor: '#ef4444',
+    iconClass: 'fa-solid fa-trash-can',
+    iconColor: '#ef4444',
+    message: `Are you sure you want to permanently delete the labour record for EPF ${targetEpf} (${targetName})? This action cannot be undone.`,
+    labourRecord: record,
+    confirmText: 'Delete Record',
+    confirmBtnStyle: 'background: #dc2626; border-color: #ef4444;',
+    onConfirm: () => {
+      labourRecords = labourRecords.filter(r => {
+        if (!r) return false;
+        const rId = r.id != null ? String(r.id).trim() : '';
+        const rEpf = r.epfNumber != null ? String(r.epfNumber).trim() : '';
+        if (targetId && rId === targetId) return false;
+        if (targetEpf && rEpf === targetEpf) return false;
+        return true;
+      });
+
+      saveRecordsToStorage();
+      closeConfirmModal();
+      closeModal();
+      renderTable();
+      renderResignedTable();
+      updateAppraisalDueBadge();
+      updateMedicalDueBadge();
+      if (activePage === 'appraisalsPage') renderAppraisalDashboard();
+      if (activePage === 'medicalPage') renderMedicalDashboard();
+      if (activePage === 'analyticsPage') renderSectionAnalytics();
+      if (activePage === 'resignedPage') renderResignedTable();
+
+      showToast(`Labourer EPF ${targetEpf} (${targetName}) deleted successfully!`, 'success');
+    }
+  });
+}
+
+function handleClearAllLabour() {
+  if (currentUser && currentUser.role === 'Viewer') {
+    showToast('Viewer accounts have read-only access and cannot clear records.', 'error');
+    return;
+  }
+
+  if (labourRecords.length === 0) {
+    showToast('There are no labour records to clear.', 'info');
+    return;
+  }
+
+  const count = labourRecords.length;
+
+  openConfirmModal({
+    title: '⚠️ Clear All Labour Records',
+    titleColor: '#ef4444',
+    iconClass: 'fa-solid fa-triangle-exclamation',
+    iconColor: '#ef4444',
+    message: `⚠️ CRITICAL: You are about to permanently delete ALL ${count} labour records from the system. This includes both active and resigned records. This action cannot be undone!`,
+    clearAllCount: count,
+    confirmText: `Permanently Delete All (${count}) Records`,
+    confirmBtnStyle: 'background: #b91c1c; border-color: #ef4444;',
+    onConfirm: () => {
+      labourRecords = [];
+      saveRecordsToStorage();
+      closeConfirmModal();
+      closeModal();
+      renderTable();
+      renderResignedTable();
+      updateAppraisalDueBadge();
+      updateMedicalDueBadge();
+      if (activePage === 'appraisalsPage') renderAppraisalDashboard();
+      if (activePage === 'medicalPage') renderMedicalDashboard();
+      if (activePage === 'analyticsPage') renderSectionAnalytics();
+      if (activePage === 'resignedPage') renderResignedTable();
+
+      showToast(`All ${count} labour records have been permanently cleared!`, 'success');
+    }
+  });
 }
 
 // --- Excel (.xlsx) Export Handler ---
@@ -1338,7 +2024,9 @@ function exportToExcel() {
     'Birth Date': r.birthDate || '',
     'Joined Date': r.joinedDate || '',
     '1st Appraisal Date ( After One Month )': r.firstAppraisalDate || (r.joinedDate ? addMonthsToDateStr(r.joinedDate, 1) : ''),
-    'Service Period': calculateServicePeriod(r.joinedDate, r.resignDate),
+    'Medical Date ( After 2 Months )': r.medicalDate || (r.joinedDate ? addMonthsToDateStr(r.joinedDate, 2) : ''),
+    'Medical Status': r.medicalStatus || 'Pending',
+    'Service Period': r.servicePeriod || calculateServicePeriod(r.joinedDate, r.resignDate),
     '1st Appraisal Marks': r.firstAppraisalMarks || '-',
     '2nd Appraisal Date ( After 3 Months )': r.secondAppraisalDate || (r.joinedDate ? addMonthsToDateStr(r.joinedDate, 3) : ''),
     '2nd Appraisal Marks': r.secondAppraisalMarks || '-',
@@ -1362,6 +2050,8 @@ function exportToExcel() {
       { wch: 14 }, // Birth Date
       { wch: 14 }, // Joined Date
       { wch: 36 }, // 1st Appraisal Date ( After One Month )
+      { wch: 32 }, // Medical Date ( After 2 Months )
+      { wch: 16 }, // Medical Status
       { wch: 28 }, // Service Period
       { wch: 20 }, // 1st Appraisal Marks
       { wch: 36 }, // 2nd Appraisal Date ( After 3 Months )
@@ -1390,90 +2080,800 @@ function escapeCsvCell(str) {
   return `"${text}"`;
 }
 
-function importFromCsv(e) {
-  const file = e.target.files[0];
-  if (!file) return;
+// ==========================================
+// --- Bulk Excel / CSV Import Engine ---
+// ==========================================
 
-  const reader = new FileReader();
-  reader.onload = function(evt) {
-    const text = evt.target.result;
-    const lines = text.split(/\r\n|\n/).filter(l => l.trim().length > 0);
-    if (lines.length <= 1) {
-      showToast('CSV file appears empty or missing headers!', 'error');
-      return;
-    }
-
-    let importedCount = 0;
-    // Skip header line
-    for (let i = 1; i < lines.length; i++) {
-      const cols = parseCsvLine(lines[i]);
-      if (cols.length >= 7 && cols[0]) {
-        const epfNumber = cols[0].trim();
-        if (!labourRecords.some(r => r.epfNumber === epfNumber)) {
-          const newRecord = {
-            id: 'REC_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-            epfNumber,
-            gender: cols[1] || 'Male',
-            nameWithInitials: cols[2] || '',
-            firstName: cols[3] || '',
-            lastName: cols[4] || '',
-            birthDate: cols[5] || '',
-            joinedDate: cols[6] || '',
-            firstAppraisalDate: cols[7] || addMonthsToDateStr(cols[6], 1),
-            firstAppraisalMarks: cols[9] || '-',
-            secondAppraisalDate: cols[10] || addMonthsToDateStr(cols[6], 3),
-            secondAppraisalMarks: cols[11] || '-',
-            resignDate: cols[12] || '',
-            confirmationLetter: cols[13] || 'Pending',
-            designation: cols[14] || '',
-            jobRole: cols[15] || '',
-            section: cols[16] || '',
-            updatedAt: new Date().toISOString()
-          };
-          labourRecords.push(newRecord);
-          importedCount++;
-        }
-      }
-    }
-
-    saveRecordsToStorage();
-    renderTable();
-    showToast(`Successfully imported ${importedCount} new labour records!`, 'success');
-    fileCsvImport.value = '';
-  };
-
-  reader.readAsText(file);
+/**
+ * Opens the Excel Import Modal & resets previous file state
+ */
+function openImportModal() {
+  if (currentUser && currentUser.role === 'Viewer') {
+    showToast('Viewer accounts have read-only access and cannot import records.', 'error');
+    return;
+  }
+  resetImportState();
+  if (excelImportModal) {
+    excelImportModal.classList.add('active');
+  }
 }
 
-function parseCsvLine(line) {
-  const result = [];
-  let current = '';
-  let inQuotes = false;
-  
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
+/**
+ * Closes the Excel Import Modal
+ */
+function closeImportModal() {
+  if (excelImportModal) {
+    excelImportModal.classList.remove('active');
+  }
+  resetImportState();
+}
+
+/**
+ * Resets file selection, preview, and statistics
+ */
+function resetImportState() {
+  parsedImportRecords = [];
+  if (excelFileInput) excelFileInput.value = '';
+  if (selectedFileName) selectedFileName.style.display = 'none';
+  if (importStatsContainer) importStatsContainer.style.display = 'none';
+  if (importPreviewContainer) importPreviewContainer.style.display = 'none';
+  if (importPreviewTableBody) importPreviewTableBody.innerHTML = '';
+  if (btnConfirmImport) {
+    btnConfirmImport.disabled = true;
+    if (btnImportCount) btnImportCount.textContent = '0';
+  }
+}
+
+/**
+ * Parses any date value from Excel into YYYY-MM-DD
+ * Supports JS Date objects, Excel numeric serials, and date strings (M/D/YYYY, D/M/YYYY, YYYY-MM-DD)
+ * Guarantees zero timezone skew across midnight boundaries.
+ */
+function parseExcelDate(val) {
+  if (val === null || val === undefined || val === '') return '';
+
+  // If already Date object (normalize with UTC components to prevent negative timezone offset day-shift)
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return '';
+    const y = val.getUTCFullYear();
+    const m = String(val.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(val.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  // If numeric Excel serial code (e.g. 46113)
+  if (typeof val === 'number') {
+    if (typeof XLSX !== 'undefined' && XLSX.SSF && XLSX.SSF.parse_date_code) {
+      try {
+        const dObj = XLSX.SSF.parse_date_code(val);
+        if (dObj && dObj.y && dObj.m && dObj.d) {
+          const y = dObj.y;
+          const m = String(dObj.m).padStart(2, '0');
+          const d = String(dObj.d).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+        }
+      } catch (err) {
+        // Fallback below
       }
-    } else if (char === ',' && !inQuotes) {
-      result.push(current);
-      current = '';
-    } else {
-      current += char;
+    }
+    // Standard Excel epoch: Jan 1 1900 with leap year bug offset (25569) + 12h midday buffer
+    if (val > 20000 && val < 90000) {
+      const utcDays = Math.floor(val - 25569);
+      const dateInfo = new Date((utcDays * 86400 + 43200) * 1000);
+      const y = dateInfo.getUTCFullYear();
+      const m = String(dateInfo.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(dateInfo.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
     }
   }
-  result.push(current);
-  return result;
+
+  const str = String(val).trim();
+  if (!str || str === '-' || str.toLowerCase() === 'n/a' || str.toLowerCase() === 'null') return '';
+
+  // Match YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD (with optional time portion)
+  const isoMatch = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T].*)?$/);
+  if (isoMatch) {
+    const y = isoMatch[1];
+    const m = String(parseInt(isoMatch[2], 10)).padStart(2, '0');
+    const d = String(parseInt(isoMatch[3], 10)).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  // Match M/D/YYYY or D/M/YYYY or DD-MM-YYYY (with optional time portion)
+  const slashMatch = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:[ T].*)?$/);
+  if (slashMatch) {
+    const part1 = parseInt(slashMatch[1], 10);
+    const part2 = parseInt(slashMatch[2], 10);
+    const year = slashMatch[3];
+
+    let month, day;
+    if (part1 > 12) {
+      // First part is day (e.g. 24/09/2026 or 24-04-2026)
+      day = part1;
+      month = part2;
+    } else if (part2 > 12) {
+      // Second part is day (e.g. 04/24/2026)
+      month = part1;
+      day = part2;
+    } else {
+      // Both <= 12: In provided Excel format (4/1/2026, 5/1/2026, 6/1/2026) -> M/D/YYYY
+      month = part1;
+      day = part2;
+    }
+
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  // Fallback try standard JS Date
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return formatDateToInput(parsed);
+  }
+
+  return '';
+}
+
+/**
+ * Intelligent full name splitter into nameWithInitials, firstName, and lastName
+ */
+function splitFullName(fullName) {
+  const clean = String(fullName || '').trim().replace(/\s+/g, ' ');
+  if (!clean) return { nameWithInitials: '', firstName: '', lastName: '' };
+
+  const parts = clean.split(' ');
+  if (parts.length === 1) {
+    return { nameWithInitials: clean, firstName: parts[0], lastName: '' };
+  } else if (parts.length === 2) {
+    return { nameWithInitials: clean, firstName: parts[0], lastName: parts[1] };
+  } else {
+    // 3 or more words: e.g. "Oddachchi Patabadige Jayantha"
+    return {
+      nameWithInitials: clean,
+      firstName: parts[0],
+      lastName: parts.slice(1).join(' ')
+    };
+  }
+}
+
+/**
+ * Maps Excel columns to system fields using tolerant, fuzzy header recognition
+ * Accurately handles the exact headers from user's image & exported templates:
+ * EPF No, FULL NAME, First Name, Last Name, Birth Date, JOINED DATE,
+ * 1st Appraisal Date ( After One Month ), Service Period, 1st Appraisal Marks,
+ * 2nd Appraissal Date ( After 3 Months ), 2nd Appraissal Marks, RESIGN DATE, Confermetion Letter,
+ * 1st JOB ROLLS (designation), 2nd JOB ROLLS (jobRole), SECTION, M / F
+ */
+function mapHeaderIndices(headerRow) {
+  const map = {
+    epf: -1,
+    gender: -1,
+    nameWithInitials: -1,
+    fullName: -1,
+    firstName: -1,
+    lastName: -1,
+    birthDate: -1,
+    joinedDate: -1,
+    firstAppraisalDate: -1,
+    medicalDate: -1,
+    medicalStatus: -1,
+    servicePeriod: -1,
+    firstAppraisalMarks: -1,
+    secondAppraisalDate: -1,
+    secondAppraisalMarks: -1,
+    resignDate: -1,
+    confirmationLetter: -1,
+    designation: -1,
+    jobRole: -1,
+    section: -1
+  };
+
+  const jobRollIndices = [];
+
+  headerRow.forEach((rawH, idx) => {
+    if (rawH === null || rawH === undefined) return;
+    const h = String(rawH).trim().toLowerCase();
+    const clean = h.replace(/[^a-z0-9]/g, '');
+
+    // 1. EPF Number / EPF No
+    if (map.epf === -1 && (clean.startsWith('epf') || h.includes('epf') || clean.startsWith('empno') || clean.includes('employeeno') || clean === 'empid' || clean === 'workerid')) {
+      map.epf = idx;
+    }
+    // 2. Gender / M / F
+    else if (map.gender === -1 && (clean === 'gender' || clean === 'sex' || clean === 'mf' || clean === 'm/f' || h.includes('m / f') || h.includes('m/f'))) {
+      map.gender = idx;
+    }
+    // 3. Name with Initials
+    else if (map.nameWithInitials === -1 && (clean.includes('namewithinitials') || clean.includes('namewithinitial') || h.includes('name with initials') || h.includes('initials'))) {
+      map.nameWithInitials = idx;
+    }
+    // 4. Full Name (fallback)
+    else if (map.fullName === -1 && (clean.includes('fullname') || h === 'full name' || h === 'name')) {
+      map.fullName = idx;
+    }
+    // 5. First Name
+    else if (map.firstName === -1 && (clean === 'firstname' || clean === 'fname' || h.includes('first name'))) {
+      map.firstName = idx;
+    }
+    // 6. Last Name / Surname
+    else if (map.lastName === -1 && (clean === 'lastname' || clean === 'surname' || clean === 'lname' || h.includes('last name'))) {
+      map.lastName = idx;
+    }
+    // 7. Birth Date / DOB
+    else if (map.birthDate === -1 && (clean.includes('birth') || clean.includes('dob') || clean.includes('dateofbirth') || h.includes('birth') || h.includes('b.date') || h.includes('bdate'))) {
+      map.birthDate = idx;
+    }
+    // 8. Joined Date
+    else if (map.joinedDate === -1 && (clean.includes('joineddate') || clean.includes('joindate') || clean.includes('datejoined') || h.includes('joined date') || h.includes('join date') || clean === 'doj')) {
+      map.joinedDate = idx;
+    }
+    // 9. 1st Appraisal Date ( After One Month )
+    else if (map.firstAppraisalDate === -1 && (h.includes('1st') || h.includes('first')) && (h.includes('apprais') || h.includes('appraiss')) && (h.includes('date') || clean.includes('date') || h.includes('after'))) {
+      map.firstAppraisalDate = idx;
+    }
+    // Medical Date ( After 2 Months )
+    else if (map.medicalDate === -1 && (clean.includes('medicaldate') || clean.includes('meddate') || h.includes('medical date') || (h.includes('medical') && (h.includes('date') || h.includes('due'))))) {
+      map.medicalDate = idx;
+    }
+    // Medical Status / Result
+    else if (map.medicalStatus === -1 && (clean.includes('medicalstatus') || clean.includes('medicalresult') || h.includes('medical status') || h.includes('medical result') || clean === 'medical')) {
+      map.medicalStatus = idx;
+    }
+    // 10. Service Period
+    else if (map.servicePeriod === -1 && (clean.includes('serviceperiod') || h.includes('service period') || clean === 'service')) {
+      map.servicePeriod = idx;
+    }
+    // 11. 1st Appraisal Marks
+    else if (map.firstAppraisalMarks === -1 && (h.includes('1st') || h.includes('first')) && (h.includes('apprais') || h.includes('appraiss') || clean.includes('mark'))) {
+      map.firstAppraisalMarks = idx;
+    }
+    // 12. 2nd Appraisal Date ( After 3 Months )
+    else if (map.secondAppraisalDate === -1 && (h.includes('2nd') || h.includes('second')) && (h.includes('apprais') || h.includes('appraiss')) && (h.includes('date') || clean.includes('date') || h.includes('after'))) {
+      map.secondAppraisalDate = idx;
+    }
+    // 13. 2nd Appraisal Marks
+    else if (map.secondAppraisalMarks === -1 && (h.includes('2nd') || h.includes('second')) && (h.includes('apprais') || h.includes('appraiss') || clean.includes('mark'))) {
+      map.secondAppraisalMarks = idx;
+    }
+    // 14. RESIGN DATE
+    else if (map.resignDate === -1 && (clean.includes('resigndate') || clean.includes('resignationdate') || h.includes('resign') || clean === 'dor')) {
+      map.resignDate = idx;
+    }
+    // 15. Confermetion Letter (supports 'Confermetion Letter' and 'Confirmation Letter')
+    else if (map.confirmationLetter === -1 && (clean.includes('confermetion') || clean.includes('confirmation') || clean.includes('letter'))) {
+      map.confirmationLetter = idx;
+    }
+    // 16. Designation
+    else if (map.designation === -1 && (clean.includes('designation') || h.includes('designation') || clean === 'desig')) {
+      map.designation = idx;
+    }
+    // 17. Job Role
+    else if (map.jobRole === -1 && (clean.includes('jobrole') || clean.includes('role') || h.includes('job role'))) {
+      map.jobRole = idx;
+    }
+    // Legacy dual JOB ROLLS columns
+    else if (clean.includes('jobroll') || h.includes('job roll')) {
+      jobRollIndices.push(idx);
+    }
+    // 18. Section
+    else if (map.section === -1 && (clean === 'section' || clean.startsWith('section') || clean.includes('dept') || clean.includes('department'))) {
+      map.section = idx;
+    }
+  });
+
+  // Assign dual JOB ROLLS columns if explicit Designation / Job Role not matched
+  if (jobRollIndices.length >= 2) {
+    if (map.designation === -1) map.designation = jobRollIndices[0];
+    if (map.jobRole === -1) map.jobRole = jobRollIndices[1];
+  } else if (jobRollIndices.length === 1) {
+    if (map.designation === -1) map.designation = jobRollIndices[0];
+    else if (map.jobRole === -1) map.jobRole = jobRollIndices[0];
+  }
+
+  // Fallback if nameWithInitials not matched but fullName is
+  if (map.nameWithInitials === -1 && map.fullName !== -1) {
+    map.nameWithInitials = map.fullName;
+  }
+
+  return map;
+}
+
+/**
+ * Reads and parses selected Excel / CSV file with robust header detection and intra-file duplicate tracking
+ */
+function handleExcelFileSelected(file) {
+  if (!file) return;
+
+  if (typeof XLSX === 'undefined') {
+    showToast('Excel processing library is still loading. Please try again.', 'error');
+    return;
+  }
+
+  // Show selected file name in drop zone
+  if (fileNameText) fileNameText.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+  if (selectedFileName) selectedFileName.style.display = 'inline-flex';
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      // cellDates: false ensures numbers are kept as Excel serials, eliminating SheetJS timezone skew bugs
+      const workbook = XLSX.read(data, { type: 'array', cellDates: false });
+      if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+        showToast('No sheets found in this Excel file!', 'error');
+        return;
+      }
+
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+      if (!rawRows || rawRows.length === 0) {
+        showToast('The uploaded sheet is completely empty!', 'error');
+        return;
+      }
+
+      // Robust header detection: find row containing "epf" AND at least one other known field
+      let headerRowIndex = -1;
+      for (let r = 0; r < Math.min(rawRows.length, 15); r++) {
+        const rowStr = rawRows[r].map(c => String(c).toLowerCase()).join(' ');
+        const hasEpf = rowStr.includes('epf') || rowStr.includes('emp');
+        const hasOther = rowStr.includes('name') || rowStr.includes('join') || rowStr.includes('date') ||
+                         rowStr.includes('section') || rowStr.includes('service') || rowStr.includes('roll') || rowStr.includes('gender');
+        if (hasEpf && hasOther) {
+          headerRowIndex = r;
+          break;
+        }
+      }
+
+      // Fallback: look for row containing "epf" or default to row 0
+      if (headerRowIndex === -1) {
+        for (let r = 0; r < Math.min(rawRows.length, 10); r++) {
+          const rowStr = rawRows[r].map(c => String(c).toLowerCase()).join(' ');
+          if (rowStr.includes('epf')) {
+            headerRowIndex = r;
+            break;
+          }
+        }
+        if (headerRowIndex === -1) headerRowIndex = 0;
+      }
+
+      const headerRow = rawRows[headerRowIndex];
+      const map = mapHeaderIndices(headerRow);
+
+      if (map.epf === -1) {
+        showToast('Could not find "EPF No" column header in Excel file!', 'error');
+        return;
+      }
+
+      parsedImportRecords = [];
+      const seenEpfInFile = new Set();
+      let totalFileRows = 0;
+      let newCount = 0;
+      let existingCount = 0;
+      let invalidCount = 0;
+
+      for (let i = headerRowIndex + 1; i < rawRows.length; i++) {
+        const row = rawRows[i];
+        if (!row || row.length === 0) continue;
+
+        // Check if row is completely blank
+        const isBlank = row.every(val => val === '' || val === null || val === undefined);
+        if (isBlank) continue;
+
+        totalFileRows++;
+
+        const rawEpf = map.epf !== -1 ? row[map.epf] : '';
+        const epfNumber = String(rawEpf !== null && rawEpf !== undefined ? rawEpf : '').trim();
+
+        // 2. Gender
+        const rawGender = map.gender !== -1 ? row[map.gender] : '';
+        let gender = 'Male';
+        const gStr = String(rawGender || '').trim().toLowerCase();
+        if (gStr === 'female' || gStr === 'f') gender = 'Female';
+        else if (gStr === 'other') gender = 'Other';
+        else if (gStr === 'male' || gStr === 'm') gender = 'Male';
+
+        // 3. Name with Initials, First Name, Last Name
+        const rawInitials = map.nameWithInitials !== -1 ? String(row[map.nameWithInitials] || '').trim() : '';
+        const rawFullName = map.fullName !== -1 ? String(row[map.fullName] || '').trim() : '';
+        const rawExplicitFirst = map.firstName !== -1 ? String(row[map.firstName] || '').trim() : '';
+        const rawExplicitLast = map.lastName !== -1 ? String(row[map.lastName] || '').trim() : '';
+
+        let nameWithInitials = rawInitials || rawFullName;
+        let firstName = rawExplicitFirst;
+        let lastName = rawExplicitLast;
+
+        if (nameWithInitials && (!firstName || !lastName)) {
+          const split = splitFullName(nameWithInitials);
+          if (!firstName) firstName = split.firstName;
+          if (!lastName) lastName = split.lastName;
+        } else if (!nameWithInitials && (firstName || lastName)) {
+          nameWithInitials = (firstName ? firstName.charAt(0).toUpperCase() + ' ' : '') + lastName;
+        }
+        if (!nameWithInitials) nameWithInitials = epfNumber;
+
+        // 6. Birth Date
+        const rawBirth = map.birthDate !== -1 ? row[map.birthDate] : '';
+        const birthDate = parseExcelDate(rawBirth);
+
+        // 7. Joined Date
+        const rawJoined = map.joinedDate !== -1 ? row[map.joinedDate] : '';
+        const joinedDate = parseExcelDate(rawJoined);
+
+        // 13. Resign Date (parsed early so service period can use it if calculating)
+        const rawResign = map.resignDate !== -1 ? row[map.resignDate] : '';
+        const resignDate = parseExcelDate(rawResign);
+
+        // 8 & 10. 1st Appraisal Date & Marks
+        // If provided in Excel, use it directly; if not given, calculate +1 month from joinedDate
+        const raw1stDate = map.firstAppraisalDate !== -1 ? row[map.firstAppraisalDate] : '';
+        let firstAppraisalDate = parseExcelDate(raw1stDate);
+        if (!firstAppraisalDate && joinedDate) {
+          firstAppraisalDate = addMonthsToDateStr(joinedDate, 1);
+        }
+        const raw1stMarks = map.firstAppraisalMarks !== -1 ? row[map.firstAppraisalMarks] : '';
+        const firstAppraisalMarks = String(raw1stMarks !== null && raw1stMarks !== undefined ? raw1stMarks : '').trim() || '-';
+
+        // Medical Date & Status (After 2 Months)
+        const rawMedDate = map.medicalDate !== -1 ? row[map.medicalDate] : '';
+        let medicalDate = parseExcelDate(rawMedDate);
+        if (!medicalDate && joinedDate) {
+          medicalDate = addMonthsToDateStr(joinedDate, 2);
+        }
+        const rawMedStatus = map.medicalStatus !== -1 ? String(row[map.medicalStatus] || '').trim() : '';
+        const medicalStatus = rawMedStatus || 'Pending';
+
+        // 9. Service Period
+        // If provided in Excel, get all data from it; if not given, calculate from joinedDate (and resignDate)
+        const rawServicePeriod = map.servicePeriod !== -1 ? String(row[map.servicePeriod] !== null && row[map.servicePeriod] !== undefined ? row[map.servicePeriod] : '').trim() : '';
+        let servicePeriod = '';
+        const isProvidedService = rawServicePeriod && rawServicePeriod !== '-' && rawServicePeriod.toLowerCase() !== 'n/a' && rawServicePeriod.toLowerCase() !== 'null';
+        if (isProvidedService) {
+          servicePeriod = rawServicePeriod;
+        } else if (joinedDate) {
+          servicePeriod = calculateServicePeriod(joinedDate, resignDate);
+        }
+
+        // 11 & 12. 2nd Appraisal Date & Marks
+        // If provided in Excel, use it directly; if not given, calculate +3 months from joinedDate
+        const raw2ndDate = map.secondAppraisalDate !== -1 ? row[map.secondAppraisalDate] : '';
+        let secondAppraisalDate = parseExcelDate(raw2ndDate);
+        if (!secondAppraisalDate && joinedDate) {
+          secondAppraisalDate = addMonthsToDateStr(joinedDate, 3);
+        }
+        const raw2ndMarks = map.secondAppraisalMarks !== -1 ? row[map.secondAppraisalMarks] : '';
+        const secondAppraisalMarks = String(raw2ndMarks !== null && raw2ndMarks !== undefined ? raw2ndMarks : '').trim() || '-';
+
+        // 14. Confirmation Letter
+        const rawLetter = map.confirmationLetter !== -1 ? row[map.confirmationLetter] : '';
+        let confirmationLetter = String(rawLetter !== null && rawLetter !== undefined ? rawLetter : '').trim();
+        if (confirmationLetter.toLowerCase().includes('done')) confirmationLetter = 'Done';
+        else if (confirmationLetter.toLowerCase().includes('pending')) confirmationLetter = 'Pending';
+        else if (confirmationLetter.toLowerCase().includes('n/a') || confirmationLetter === '-') confirmationLetter = 'N/A';
+        else confirmationLetter = confirmationLetter ? 'Done' : 'Pending';
+
+        // 15 & 16. Designation & Job Role
+        const designation = map.designation !== -1 ? String(row[map.designation] || '').trim() : '';
+        const jobRole = map.jobRole !== -1 ? String(row[map.jobRole] || '').trim() : '';
+
+        // 17. Section
+        const section = map.section !== -1 ? String(row[map.section] || '').trim() : '';
+
+        // Validation
+        let isInvalid = false;
+        let validationMsg = '';
+        if (!epfNumber) {
+          isInvalid = true;
+          validationMsg = 'Missing EPF Number';
+        } else if (!joinedDate) {
+          isInvalid = true;
+          validationMsg = 'Missing Joined Date';
+        }
+
+        const isAlreadyInDB = !isInvalid && labourRecords.some(r => r.epfNumber === epfNumber);
+        const isDuplicateInFile = !isInvalid && seenEpfInFile.has(epfNumber);
+        if (epfNumber) seenEpfInFile.add(epfNumber);
+
+        const isDuplicate = !isInvalid && (isAlreadyInDB || isDuplicateInFile);
+
+        if (isInvalid) {
+          invalidCount++;
+        } else if (isDuplicate) {
+          existingCount++;
+        } else {
+          newCount++;
+        }
+
+        parsedImportRecords.push({
+          epfNumber,
+          gender,
+          nameWithInitials: nameWithInitials || epfNumber,
+          firstName,
+          lastName,
+          birthDate: birthDate || '',
+          joinedDate,
+          firstAppraisalDate,
+          firstAppraisalMarks,
+          medicalDate,
+          medicalStatus,
+          secondAppraisalDate,
+          secondAppraisalMarks,
+          servicePeriod,
+          resignDate,
+          confirmationLetter,
+          designation,
+          jobRole,
+          section,
+          isInvalid,
+          validationMsg,
+          isDuplicate,
+          isDuplicateInFile,
+          computedService: servicePeriod || calculateServicePeriod(joinedDate, resignDate)
+        });
+      }
+
+      // Update counters
+      if (statImportTotal) statImportTotal.textContent = totalFileRows;
+      if (statImportNew) statImportNew.textContent = newCount;
+      if (statImportExisting) statImportExisting.textContent = existingCount;
+      if (statImportInvalid) statImportInvalid.textContent = invalidCount;
+      if (importStatsContainer) importStatsContainer.style.display = 'block';
+
+      // Render preview table
+      renderImportPreviewTable();
+
+      const validRecordsCount = parsedImportRecords.filter(r => !r.isInvalid).length;
+      if (btnConfirmImport) {
+        btnConfirmImport.disabled = validRecordsCount === 0;
+        if (btnImportCount) btnImportCount.textContent = validRecordsCount;
+      }
+      if (previewCountText) {
+        previewCountText.textContent = `${validRecordsCount} valid / ${totalFileRows} total records ready`;
+      }
+      if (importPreviewContainer) {
+        importPreviewContainer.style.display = 'flex';
+      }
+
+      if (validRecordsCount > 0) {
+        showToast(`Parsed ${totalFileRows} rows: ${newCount} new, ${existingCount} duplicate, ${invalidCount} invalid`, 'success');
+      } else {
+        showToast('No valid records found to import. Please check file format.', 'error');
+      }
+
+    } catch (err) {
+      console.error('Failed to parse Excel file', err);
+      showToast('Error reading Excel file: ' + err.message, 'error');
+    }
+  };
+
+  reader.readAsArrayBuffer(file);
+}
+
+/**
+ * Renders the preview table inside the modal
+ */
+function renderImportPreviewTable() {
+  if (!importPreviewTableBody) return;
+  importPreviewTableBody.innerHTML = '';
+
+  parsedImportRecords.forEach(rec => {
+    const tr = document.createElement('tr');
+    
+    let statusBadge = '';
+    if (rec.isInvalid) {
+      statusBadge = `<span class="badge-import-error" title="${escapeHtml(rec.validationMsg)}"><i class="fa-solid fa-circle-xmark"></i> ${escapeHtml(rec.validationMsg)}</span>`;
+    } else if (rec.isDuplicateInFile) {
+      statusBadge = `<span class="badge-import-update" title="Duplicate EPF repeated in file"><i class="fa-solid fa-clone"></i> Duplicate in File</span>`;
+    } else if (rec.isDuplicate) {
+      statusBadge = `<span class="badge-import-update" title="EPF already exists in database"><i class="fa-solid fa-arrows-rotate"></i> Update/Existing</span>`;
+    } else {
+      statusBadge = `<span class="badge-import-new"><i class="fa-solid fa-circle-plus"></i> New Labour</span>`;
+    }
+
+    const dispService = rec.servicePeriod || rec.computedService || '-';
+
+    tr.innerHTML = `
+      <td>${statusBadge}</td>
+      <td class="cell-epf"><strong>${escapeHtml(rec.epfNumber || '-')}</strong></td>
+      <td>${escapeHtml(rec.gender || '-')}</td>
+      <td><strong>${escapeHtml(rec.nameWithInitials || '-')}</strong></td>
+      <td>${escapeHtml(rec.joinedDate || '-')}</td>
+      <td>${escapeHtml(rec.birthDate || '-')}</td>
+      <td>${escapeHtml(rec.firstAppraisalDate || '-')} <small>(${escapeHtml(rec.firstAppraisalMarks || '-')})</small></td>
+      <td><span class="cell-service-period" style="font-size: 0.75rem;">${escapeHtml(dispService)}</span></td>
+      <td>${escapeHtml(rec.secondAppraisalDate || '-')} <small>(${escapeHtml(rec.secondAppraisalMarks || '-')})</small></td>
+      <td>${escapeHtml(rec.resignDate || '-')}</td>
+      <td><span class="badge ${rec.confirmationLetter === 'Done' ? 'badge-ok' : 'badge-duesoon'}">${escapeHtml(rec.confirmationLetter || 'Pending')}</span></td>
+      <td>${escapeHtml(rec.designation || '-')}</td>
+      <td>${escapeHtml(rec.jobRole || '-')}</td>
+      <td>${escapeHtml(rec.section || '-')}</td>
+    `;
+    importPreviewTableBody.appendChild(tr);
+  });
+}
+
+/**
+ * Handles confirmation and committing records into storage
+ */
+function handleConfirmImport() {
+  const duplicatePolicy = document.querySelector('input[name="importDuplicateAction"]:checked')?.value || 'update';
+  const validRecords = parsedImportRecords.filter(r => !r.isInvalid);
+
+  if (validRecords.length === 0) {
+    showToast('No valid records to import!', 'error');
+    return;
+  }
+
+  let importedCount = 0;
+  let updatedCount = 0;
+  let skippedCount = 0;
+
+  validRecords.forEach(rec => {
+    const existingIndex = labourRecords.findIndex(r => r.epfNumber === rec.epfNumber);
+
+    if (existingIndex !== -1) {
+      if (duplicatePolicy === 'update') {
+        const existing = labourRecords[existingIndex];
+        labourRecords[existingIndex] = {
+          ...existing,
+          gender: rec.gender || existing.gender,
+          nameWithInitials: rec.nameWithInitials || existing.nameWithInitials,
+          firstName: rec.firstName || existing.firstName,
+          lastName: rec.lastName || existing.lastName,
+          birthDate: rec.birthDate || existing.birthDate,
+          joinedDate: rec.joinedDate || existing.joinedDate,
+          firstAppraisalDate: rec.firstAppraisalDate || existing.firstAppraisalDate,
+          firstAppraisalMarks: rec.firstAppraisalMarks !== '-' ? rec.firstAppraisalMarks : existing.firstAppraisalMarks,
+          medicalDate: rec.medicalDate || existing.medicalDate || (rec.joinedDate ? addMonthsToDateStr(rec.joinedDate, 2) : ''),
+          medicalStatus: rec.medicalStatus || existing.medicalStatus || 'Pending',
+          secondAppraisalDate: rec.secondAppraisalDate || existing.secondAppraisalDate,
+          secondAppraisalMarks: rec.secondAppraisalMarks !== '-' ? rec.secondAppraisalMarks : existing.secondAppraisalMarks,
+          servicePeriod: rec.servicePeriod || existing.servicePeriod || (rec.joinedDate ? calculateServicePeriod(rec.joinedDate, rec.resignDate || existing.resignDate) : existing.servicePeriod),
+          resignDate: rec.resignDate || existing.resignDate,
+          confirmationLetter: rec.confirmationLetter || existing.confirmationLetter,
+          designation: rec.designation || existing.designation,
+          jobRole: rec.jobRole || existing.jobRole,
+          section: rec.section || existing.section,
+          updatedAt: new Date().toISOString()
+        };
+        updatedCount++;
+      } else {
+        skippedCount++;
+      }
+    } else {
+      const newRecord = {
+        id: 'REC_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+        epfNumber: rec.epfNumber,
+        gender: rec.gender,
+        nameWithInitials: rec.nameWithInitials,
+        firstName: rec.firstName,
+        lastName: rec.lastName,
+        birthDate: rec.birthDate || '',
+        joinedDate: rec.joinedDate,
+        firstAppraisalDate: rec.firstAppraisalDate,
+        firstAppraisalMarks: rec.firstAppraisalMarks,
+        medicalDate: rec.medicalDate || (rec.joinedDate ? addMonthsToDateStr(rec.joinedDate, 2) : ''),
+        medicalStatus: rec.medicalStatus || 'Pending',
+        secondAppraisalDate: rec.secondAppraisalDate,
+        secondAppraisalMarks: rec.secondAppraisalMarks,
+        servicePeriod: rec.servicePeriod || (rec.joinedDate ? calculateServicePeriod(rec.joinedDate, rec.resignDate) : ''),
+        resignDate: rec.resignDate,
+        confirmationLetter: rec.confirmationLetter,
+        designation: rec.designation,
+        jobRole: rec.jobRole,
+        section: rec.section,
+        updatedAt: new Date().toISOString()
+      };
+      labourRecords.unshift(newRecord);
+      importedCount++;
+    }
+  });
+
+  saveRecordsToStorage();
+  renderTable();
+  renderResignedTable();
+  updateStats();
+  updateSectionFilterOptions();
+  updateAppraisalDueBadge();
+  updateMedicalDueBadge();
+  if (activePage === 'appraisalsPage') renderAppraisalDashboard();
+  if (activePage === 'medicalPage') renderMedicalDashboard();
+  if (activePage === 'analyticsPage') renderSectionAnalytics();
+
+  closeImportModal();
+
+  let toastMsg = `Bulk Import Complete: ${importedCount} added`;
+  if (updatedCount > 0) toastMsg += `, ${updatedCount} updated`;
+  if (skippedCount > 0) toastMsg += `, ${skippedCount} skipped`;
+  showToast(toastMsg, 'success');
+}
+
+/**
+ * Downloads a sample Excel template (.xlsx) with exact headers matching the user's spreadsheet
+ */
+function downloadImportTemplate() {
+  if (typeof XLSX === 'undefined') {
+    showToast('Excel library loading, please try again in a moment.', 'error');
+    return;
+  }
+
+  const templateHeaders = [
+    'EPF Number',
+    'Gender',
+    'Name with Initials',
+    'First Name',
+    'Last Name',
+    'Birth Date',
+    'Joined Date',
+    '1st Appraisal Date ( After One Month )',
+    'Medical Date ( After 2 Months )',
+    'Service Period',
+    '1st Appraisal Marks',
+    '2nd Appraisal Date ( After 3 Months )',
+    '2nd Appraisal Marks',
+    'RESIGN DATE',
+    'Confermetion Letter',
+    'Designation',
+    'Job Role',
+    'Section'
+  ];
+
+  const sampleRow = [
+    '1325',
+    'Male',
+    'Oddachchi Patabadige Jayantha',
+    'Oddachchi',
+    'Patabadige Jayantha',
+    '1995-08-15',
+    '2026-04-01',
+    '2026-05-01',
+    '2026-06-01',
+    '0 Years, 5 Months, 28 Days',
+    '-',
+    '2026-07-01',
+    '-',
+    '',
+    'Pending',
+    'Production helper',
+    'Hatcheting',
+    'Yard A'
+  ];
+
+  const wsData = [templateHeaders, sampleRow];
+  const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+
+  // Column width styling matching exact 18 headers
+  worksheet['!cols'] = [
+    { wch: 14 }, // EPF Number
+    { wch: 10 }, // Gender
+    { wch: 32 }, // Name with Initials
+    { wch: 16 }, // First Name
+    { wch: 22 }, // Last Name
+    { wch: 14 }, // Birth Date
+    { wch: 14 }, // Joined Date
+    { wch: 38 }, // 1st Appraisal Date ( After One Month )
+    { wch: 34 }, // Medical Date ( After 2 Months )
+    { wch: 28 }, // Service Period
+    { wch: 20 }, // 1st Appraisal Marks
+    { wch: 38 }, // 2nd Appraisal Date ( After 3 Months )
+    { wch: 20 }, // 2nd Appraisal Marks
+    { wch: 14 }, // RESIGN DATE
+    { wch: 22 }, // Confermetion Letter
+    { wch: 24 }, // Designation
+    { wch: 24 }, // Job Role
+    { wch: 18 }  // Section
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Labour Template');
+  XLSX.writeFile(workbook, 'Labour_Import_Template.xlsx');
+  showToast('Sample Excel template downloaded!', 'success');
 }
 
 function switchPage(pageId) {
   activePage = pageId;
-  const pages = ['directoryPage', 'appraisalsPage', 'resignedPage', 'analyticsPage', 'usersPage'];
-  const tabs = ['tabDirectory', 'tabAppraisals', 'tabResigned', 'tabAnalytics', 'tabUsers'];
+  const pages = ['directoryPage', 'appraisalsPage', 'medicalPage', 'resignedPage', 'analyticsPage', 'usersPage'];
+  const tabs = ['tabDirectory', 'tabAppraisals', 'tabMedical', 'tabResigned', 'tabAnalytics', 'tabUsers'];
 
   pages.forEach(pId => {
     const el = document.getElementById(pId);
@@ -1491,8 +2891,12 @@ function switchPage(pageId) {
     }
   });
 
-  if (pageId === 'appraisalsPage') {
+  if (pageId === 'directoryPage') {
+    renderTable();
+  } else if (pageId === 'appraisalsPage') {
     renderAppraisalDashboard();
+  } else if (pageId === 'medicalPage') {
+    renderMedicalDashboard();
   } else if (pageId === 'resignedPage') {
     renderResignedTable();
   } else if (pageId === 'analyticsPage') {
@@ -1520,15 +2924,19 @@ function initEventListeners() {
     inputJoinedDate.addEventListener(evtType, () => updateLiveCalculations(true));
     inputResignDate.addEventListener(evtType, () => updateLiveCalculations(false));
     inputFirstAppraisal.addEventListener(evtType, () => updateLiveCalculations(false));
+    if (inputMedicalDate) inputMedicalDate.addEventListener(evtType, () => updateLiveCalculations(false));
     inputSecondAppraisal.addEventListener(evtType, () => updateLiveCalculations(false));
   });
 
   // Resign Modal Handlers
-  function openResignModal(recordId) {
-    const record = labourRecords.find(r => r.id === recordId);
+  function openResignModal(recordId, epfFallback) {
+    const record = labourRecords.find(r => 
+      (r.id && (r.id === recordId || String(r.id) === String(recordId))) ||
+      (r.epfNumber && (String(r.epfNumber) === String(recordId) || String(r.epfNumber) === String(epfFallback)))
+    );
     if (!record) return;
 
-    document.getElementById('resignLabourId').value = recordId;
+    document.getElementById('resignLabourId').value = record.id || record.epfNumber;
     document.getElementById('resignLabourInfo').textContent = `EPF ${record.epfNumber} - ${record.nameWithInitials}`;
     document.getElementById('resignLabourJoined').textContent = `Joined Date: ${record.joinedDate || '-'}`;
 
@@ -1558,7 +2966,10 @@ function initEventListeners() {
       return;
     }
 
-    const record = labourRecords.find(r => r.id === recordId);
+    const record = labourRecords.find(r => 
+      (r.id && (r.id === recordId || String(r.id) === String(recordId))) ||
+      (r.epfNumber && String(r.epfNumber) === String(recordId))
+    );
     if (!record) return;
 
     record.resignDate = resignDate;
@@ -1568,28 +2979,56 @@ function initEventListeners() {
     renderTable();
     renderResignedTable();
     updateAppraisalDueBadge();
+    updateMedicalDueBadge();
     if (activePage === 'appraisalsPage') renderAppraisalDashboard();
+    if (activePage === 'medicalPage') renderMedicalDashboard();
+    if (activePage === 'analyticsPage') renderSectionAnalytics();
 
     closeResignModal();
     showToast(`Labourer EPF ${record.epfNumber} (${record.nameWithInitials}) marked as Resigned!`, 'success');
   }
 
-  function handleReactivateLabour(recordId) {
-    const record = labourRecords.find(r => r.id === recordId);
+  function handleReactivateLabour(recordId, epfFallback) {
+    const cleanId = recordId != null ? String(recordId).trim() : '';
+    const cleanEpf = epfFallback != null ? String(epfFallback).trim() : '';
+
+    const record = labourRecords.find(r => {
+      if (!r) return false;
+      const rId = r.id != null ? String(r.id).trim() : '';
+      const rEpf = r.epfNumber != null ? String(r.epfNumber).trim() : '';
+      if (cleanId && (rId === cleanId || rEpf === cleanId)) return true;
+      if (cleanEpf && (rEpf === cleanEpf || rId === cleanEpf)) return true;
+      return false;
+    });
     if (!record) return;
 
-    if (confirm(`Re-activate EPF ${record.epfNumber} (${record.nameWithInitials}) and remove resignation status?`)) {
-      record.resignDate = '';
-      record.updatedAt = new Date().toISOString();
+    openConfirmModal({
+      title: 'Re-activate Labourer',
+      titleColor: 'var(--accent-green)',
+      iconClass: 'fa-solid fa-user-check',
+      iconColor: 'var(--accent-green)',
+      message: `Re-activate labourer EPF ${record.epfNumber} (${record.nameWithInitials || record.firstName}) and remove resignation status?`,
+      labourRecord: record,
+      confirmText: 'Confirm Re-activation',
+      confirmBtnStyle: 'background: #059669; border-color: #10b981;',
+      onConfirm: () => {
+        record.resignDate = '';
+        record.updatedAt = new Date().toISOString();
 
-      saveRecordsToStorage();
-      renderTable();
-      renderResignedTable();
-      updateAppraisalDueBadge();
-      if (activePage === 'appraisalsPage') renderAppraisalDashboard();
+        saveRecordsToStorage();
+        closeConfirmModal();
+        renderTable();
+        renderResignedTable();
+        updateAppraisalDueBadge();
+        updateMedicalDueBadge();
+        if (activePage === 'appraisalsPage') renderAppraisalDashboard();
+        if (activePage === 'medicalPage') renderMedicalDashboard();
+        if (activePage === 'analyticsPage') renderSectionAnalytics();
+        if (activePage === 'resignedPage') renderResignedTable();
 
-      showToast(`Labourer EPF ${record.epfNumber} re-activated successfully!`, 'success');
-    }
+        showToast(`Labourer EPF ${record.epfNumber} re-activated successfully!`, 'success');
+      }
+    });
   }
 
   if (btnCloseResignModal) btnCloseResignModal.addEventListener('click', closeResignModal);
@@ -1606,7 +3045,10 @@ function initEventListeners() {
     ['input', 'change', 'keyup'].forEach(evtType => {
       inputResignDateModal.addEventListener(evtType, () => {
         const recordId = document.getElementById('resignLabourId').value;
-        const record = labourRecords.find(r => r.id === recordId);
+        const record = labourRecords.find(r => 
+          (r.id && (r.id === recordId || String(r.id) === String(recordId))) ||
+          (r.epfNumber && String(r.epfNumber) === String(recordId))
+        );
         if (record && previewResignServicePeriod) {
           previewResignServicePeriod.textContent = calculateServicePeriod(record.joinedDate, inputResignDateModal.value);
         }
@@ -1622,14 +3064,20 @@ function initEventListeners() {
 
     if (btnEdit) {
       const id = btnEdit.dataset.id;
-      const record = labourRecords.find(r => r.id === id);
+      const epf = btnEdit.dataset.epf;
+      const record = labourRecords.find(r => 
+        (r.id && (r.id === id || String(r.id) === String(id))) ||
+        (r.epfNumber && (String(r.epfNumber) === String(id) || String(r.epfNumber) === String(epf)))
+      );
       if (record) openModal(true, record);
     } else if (btnDelete) {
       const id = btnDelete.dataset.id;
-      handleDeleteRecord(id);
+      const epf = btnDelete.dataset.epf;
+      handleDeleteRecord(id, epf);
     } else if (btnResign) {
       const id = btnResign.dataset.id;
-      openResignModal(id);
+      const epf = btnResign.dataset.epf;
+      openResignModal(id, epf);
     }
   });
 
@@ -1642,15 +3090,78 @@ function initEventListeners() {
       const btnDelete = e.target.closest('.btn-delete');
 
       if (btnReactivate) {
-        handleReactivateLabour(btnReactivate.dataset.id);
+        handleReactivateLabour(btnReactivate.dataset.id, btnReactivate.dataset.epf);
       } else if (btnEdit) {
-        const record = labourRecords.find(r => r.id === btnEdit.dataset.id);
+        const id = btnEdit.dataset.id;
+        const epf = btnEdit.dataset.epf;
+        const record = labourRecords.find(r => 
+          (r.id && (r.id === id || String(r.id) === String(id))) ||
+          (r.epfNumber && (String(r.epfNumber) === String(id) || String(r.epfNumber) === String(epf)))
+        );
         if (record) openModal(true, record);
       } else if (btnDelete) {
-        handleDeleteRecord(btnDelete.dataset.id);
+        handleDeleteRecord(btnDelete.dataset.id, btnDelete.dataset.epf);
       }
     });
   }
+
+  // Clear All Labours Handler
+  const btnClearAllLabour = document.getElementById('btnClearAllLabour');
+  if (btnClearAllLabour) {
+    btnClearAllLabour.addEventListener('click', handleClearAllLabour);
+  }
+
+  // Confirm Action Modal Listeners
+  const confirmModalEl = document.getElementById('confirmActionModal');
+  const btnCloseConfirmModalEl = document.getElementById('btnCloseConfirmModal');
+  const btnCancelConfirmModalEl = document.getElementById('btnCancelConfirmModal');
+  const btnExecuteConfirmModalEl = document.getElementById('btnExecuteConfirmModal');
+
+  if (confirmModalEl) {
+    confirmModalEl.addEventListener('click', (e) => {
+      if (e.target === confirmModalEl) closeConfirmModal();
+    });
+  }
+  if (btnCloseConfirmModalEl) btnCloseConfirmModalEl.addEventListener('click', closeConfirmModal);
+  if (btnCancelConfirmModalEl) btnCancelConfirmModalEl.addEventListener('click', closeConfirmModal);
+  if (btnExecuteConfirmModalEl) {
+    btnExecuteConfirmModalEl.addEventListener('click', () => {
+      if (typeof pendingConfirmCallback === 'function') {
+        pendingConfirmCallback();
+      }
+    });
+  }
+
+  // Global Escape key to close any active modal
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const activeConfirm = document.getElementById('confirmActionModal');
+      if (activeConfirm && activeConfirm.classList.contains('active')) {
+        closeConfirmModal();
+        return;
+      }
+      const activeLabour = document.getElementById('labourModal');
+      if (activeLabour && activeLabour.classList.contains('active')) {
+        closeModal();
+        return;
+      }
+      const activeResign = document.getElementById('resignModal');
+      if (activeResign && activeResign.classList.contains('active')) {
+        closeResignModal();
+        return;
+      }
+      const activeImport = document.getElementById('excelImportModal');
+      if (activeImport && activeImport.classList.contains('active')) {
+        closeExcelImportModal();
+        return;
+      }
+      const activeUser = document.getElementById('userModal');
+      if (activeUser && activeUser.classList.contains('active')) {
+        closeUserModal();
+        return;
+      }
+    }
+  });
 
   // Table Header Sorting
   document.querySelectorAll('.labour-table th[data-sort]').forEach(th => {
@@ -1727,6 +3238,35 @@ function initEventListeners() {
   const btnNewUser = document.getElementById('btnNewUser');
   if (btnNewUser) btnNewUser.addEventListener('click', () => openUserModal(false));
 
+  const userForm = document.getElementById('userForm');
+  if (userForm) userForm.addEventListener('submit', saveUserRecord);
+
+  const userPasswordInput = document.getElementById('userPassword');
+  if (userPasswordInput) {
+    ['input', 'change', 'keyup'].forEach(evt => {
+      userPasswordInput.addEventListener(evt, () => {
+        updatePasswordStrengthUI(userPasswordInput.value);
+      });
+    });
+  }
+
+  const btnToggleUserPw = document.getElementById('btnToggleUserPw');
+  if (btnToggleUserPw) {
+    btnToggleUserPw.addEventListener('click', () => {
+      const pwInput = document.getElementById('userPassword');
+      const iconPw = document.getElementById('iconToggleUserPw');
+      if (pwInput && iconPw) {
+        if (pwInput.type === 'password') {
+          pwInput.type = 'text';
+          iconPw.className = 'fa-solid fa-eye-slash';
+        } else {
+          pwInput.type = 'password';
+          iconPw.className = 'fa-solid fa-eye';
+        }
+      }
+    });
+  }
+
   const btnCloseUserModal = document.getElementById('btnCloseUserModal');
   const btnCancelUserModal = document.getElementById('btnCancelUserModal');
   const btnSaveUser = document.getElementById('btnSaveUser');
@@ -1766,6 +3306,8 @@ function initEventListeners() {
   // Tab Switchers
   tabDirectory.addEventListener('click', () => switchPage('directoryPage'));
   tabAppraisals.addEventListener('click', () => switchPage('appraisalsPage'));
+  const tabMedicalEl = document.getElementById('tabMedical');
+  if (tabMedicalEl) tabMedicalEl.addEventListener('click', () => switchPage('medicalPage'));
   const tabResignedEl = document.getElementById('tabResigned');
   if (tabResignedEl) tabResignedEl.addEventListener('click', () => switchPage('resignedPage'));
   const tabAnalyticsEl = document.getElementById('tabAnalytics');
@@ -1792,9 +3334,137 @@ function initEventListeners() {
     }
   });
 
+  // Medical Due Table click handlers (Mark, Edit, Resign)
+  const bodyMedical = document.getElementById('bodyMedicalDue');
+  if (bodyMedical) {
+    bodyMedical.addEventListener('click', (e) => {
+      const btnMark = e.target.closest('.btn-mark-medical');
+      const btnEdit = e.target.closest('.btn-edit-medical');
+      const btnResign = e.target.closest('.btn-resign-medical');
+      if (btnMark) {
+        const recordId = btnMark.dataset.id;
+        openMedicalModal(recordId);
+      } else if (btnEdit) {
+        const recordId = btnEdit.dataset.id;
+        const record = labourRecords.find(r => 
+          (r.id && (r.id === recordId || String(r.id) === String(recordId))) ||
+          (r.epfNumber && String(r.epfNumber) === String(recordId))
+        );
+        if (record) openModal(true, record);
+      } else if (btnResign) {
+        const recordId = btnResign.dataset.id;
+        openResignModal(recordId);
+      }
+    });
+  }
+
+  // Medical Filter & Toolbar Handlers
+  const searchMed = document.getElementById('searchMedicalInput');
+  const filterMedStatus = document.getElementById('filterMedicalDueStatus');
+  const filterMedSec = document.getElementById('filterMedicalSection');
+  const btnClearMedFilters = document.getElementById('btnClearMedicalFilters');
+  const btnExportMed = document.getElementById('btnExportMedicalExcel');
+
+  if (searchMed) searchMed.addEventListener('input', renderMedicalDashboard);
+  if (filterMedStatus) filterMedStatus.addEventListener('change', renderMedicalDashboard);
+  if (filterMedSec) filterMedSec.addEventListener('change', renderMedicalDashboard);
+  if (btnClearMedFilters) {
+    btnClearMedFilters.addEventListener('click', () => {
+      if (searchMed) searchMed.value = '';
+      if (filterMedStatus) filterMedStatus.value = 'pendingAction';
+      if (filterMedSec) filterMedSec.value = '';
+      renderMedicalDashboard();
+    });
+  }
+  if (btnExportMed) {
+    btnExportMed.addEventListener('click', exportMedicalReport);
+  }
+
+  // Quick Medical Record Modal Event Listeners
+  const btnCloseMedModal = document.getElementById('btnCloseMedicalModal');
+  const btnCancelMedModal = document.getElementById('btnCancelMedicalModal');
+  const btnSaveMedModal = document.getElementById('btnSaveMedicalModal');
+  const medRecordModal = document.getElementById('medicalRecordModal');
+
+  if (btnCloseMedModal) btnCloseMedModal.addEventListener('click', closeMedicalModal);
+  if (btnCancelMedModal) btnCancelMedModal.addEventListener('click', closeMedicalModal);
+  if (btnSaveMedModal) btnSaveMedModal.addEventListener('click', saveMedicalRecordModal);
+  if (medRecordModal) {
+    medRecordModal.addEventListener('click', (e) => {
+      if (e.target === medRecordModal) closeMedicalModal();
+    });
+  }
+
   // Excel Export Handler
   if (btnExportExcel) {
     btnExportExcel.addEventListener('click', exportToExcel);
+  }
+
+  // Bulk Excel Import Event Handlers
+  if (btnImportExcel) {
+    btnImportExcel.addEventListener('click', openImportModal);
+  }
+  if (btnCloseImportModal) {
+    btnCloseImportModal.addEventListener('click', closeImportModal);
+  }
+  if (btnCancelImportModal) {
+    btnCancelImportModal.addEventListener('click', closeImportModal);
+  }
+  if (excelImportModal) {
+    excelImportModal.addEventListener('click', (e) => {
+      if (e.target === excelImportModal) closeImportModal();
+    });
+  }
+  if (btnDownloadTemplate) {
+    btnDownloadTemplate.addEventListener('click', downloadImportTemplate);
+  }
+  if (btnConfirmImport) {
+    btnConfirmImport.addEventListener('click', handleConfirmImport);
+  }
+  if (importDropZone && excelFileInput) {
+    importDropZone.addEventListener('click', (e) => {
+      if (e.target.closest('#btnClearFile')) return;
+      excelFileInput.click();
+    });
+
+    excelFileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleExcelFileSelected(e.target.files[0]);
+      }
+    });
+
+    // Drag & Drop handlers
+    ['dragenter', 'dragover'].forEach(evt => {
+      importDropZone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        importDropZone.classList.add('dragover');
+      });
+    });
+
+    ['dragleave', 'dragend'].forEach(evt => {
+      importDropZone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        importDropZone.classList.remove('dragover');
+      });
+    });
+
+    importDropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      importDropZone.classList.remove('dragover');
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        handleExcelFileSelected(e.dataTransfer.files[0]);
+      }
+    });
+  }
+
+  if (btnClearFile) {
+    btnClearFile.addEventListener('click', (e) => {
+      e.stopPropagation();
+      resetImportState();
+    });
   }
 }
 
@@ -1827,3 +3497,10 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+// Expose global handlers for accessibility & event delegation fallbacks
+window.handleDeleteRecord = handleDeleteRecord;
+window.handleClearAllLabour = handleClearAllLabour;
+window.openConfirmModal = openConfirmModal;
+window.closeConfirmModal = closeConfirmModal;
+
