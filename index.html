@@ -1,18 +1,31 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Labour Registration & Service Period Calculation System</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="icon" type="image/svg+xml" href="rmp-logo.svg">
   <!-- FontAwesome Icons for clean UI accents -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <!-- Chart.js Library for Appraisal Due Analytics Charts -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- SheetJS Library for Native Excel (.xlsx) Export -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Chart.js Library for Appraisal Due Analytics Charts (Local Vendor with CDN Fallback) -->
+  <script src="vendor/chart.umd.js"></script>
+  <script>
+    if (typeof Chart === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>');
+    }
+  </script>
+  <!-- SheetJS Library for Native Excel (.xlsx) Import & Export -->
+  <script src="vendor/xlsx.full.min.js"></script>
+  <script>
+    if (typeof XLSX === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"><\/script>');
+    }
+  </script>
 </head>
+
 <body>
 
   <!-- LOGIN DASHBOARD SCREEN -->
@@ -33,7 +46,8 @@
           <label for="loginUsername">Username / Email <span class="required">*</span></label>
           <div class="input-icon-wrapper">
             <i class="fa-solid fa-user input-icon"></i>
-            <input type="text" id="loginUsername" class="form-control" placeholder="Enter username (e.g. admin)" required autocomplete="username">
+            <input type="text" id="loginUsername" class="form-control" placeholder="Enter username (e.g. admin)"
+              required autocomplete="username">
           </div>
         </div>
 
@@ -41,7 +55,8 @@
           <label for="loginPassword">Password <span class="required">*</span></label>
           <div class="input-icon-wrapper">
             <i class="fa-solid fa-lock input-icon"></i>
-            <input type="password" id="loginPassword" class="form-control" placeholder="Enter password (e.g. admin123)" required autocomplete="current-password">
+            <input type="password" id="loginPassword" class="form-control" placeholder="Enter password (e.g. admin123)"
+              required autocomplete="current-password">
             <button type="button" id="btnTogglePassword" class="btn-toggle-pw" title="Toggle password visibility">
               <i class="fa-solid fa-eye" id="iconTogglePw"></i>
             </button>
@@ -64,15 +79,41 @@
 
     <!-- App Header -->
     <header class="app-header">
-      <div class="app-brand">
-        <img src="rmp-logo.svg" alt="RMP Logo" class="brand-logo-img">
-        <div class="brand-title">
-          <h1>Labour Registration System</h1>
-          <p>Service Period Calculation & Appraisal Tracking Management</p>
+      <div class="header-top-row">
+        <div class="app-brand">
+          <img src="rmp-logo.svg" alt="RMP Logo" class="brand-logo-img">
+          <div class="brand-title">
+            <h1>Labour Registration System</h1>
+            <p>Service Period Calculation & Appraisal Tracking Management</p>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <div class="user-profile-badge" id="userProfileBadge">
+            <div class="user-avatar" id="userAvatar">A</div>
+            <div class="user-info">
+              <div class="user-name" id="headerUserName">Admin User</div>
+              <div class="user-role-tag" id="headerUserRole">Admin</div>
+            </div>
+            <button id="btnLogout" class="btn-logout" title="Log Out">
+              <i class="fa-solid fa-power-off"></i>
+            </button>
+          </div>
+          <button id="btnImportExcel" class="btn btn-secondary"
+            style="background: linear-gradient(135deg, #0284c7, #0369a1); color: #ffffff; border: none; font-weight: 700;">
+            <i class="fa-solid fa-file-import"></i> Import Excel
+          </button>
+          <button id="btnExportExcel" class="btn btn-secondary"
+            style="background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; border: none; font-weight: 700;">
+            <i class="fa-solid fa-file-excel"></i> Export Excel
+          </button>
+          <button id="btnNewLabour" class="btn btn-primary">
+            <i class="fa-solid fa-plus"></i> Register New Labour
+          </button>
         </div>
       </div>
 
-      <!-- Navigation Tabs -->
+      <!-- Navigation Tabs Bar (Full-Width Span) -->
       <nav class="app-nav">
         <button class="nav-tab active" id="tabDirectory" data-page="directoryPage">
           <i class="fa-solid fa-address-book"></i> Labour Directory
@@ -80,6 +121,10 @@
         <button class="nav-tab" id="tabAppraisals" data-page="appraisalsPage">
           <i class="fa-solid fa-chart-pie"></i> Appraisal Due Dashboard
           <span class="tab-badge" id="tabDueBadge">0</span>
+        </button>
+        <button class="nav-tab" id="tabMedical" data-page="medicalPage">
+          <i class="fa-solid fa-notes-medical"></i> Medical Due Dashboard
+          <span class="tab-badge badge-teal" id="tabMedicalBadge">0</span>
         </button>
         <button class="nav-tab" id="tabResigned" data-page="resignedPage">
           <i class="fa-solid fa-user-slash"></i> Resigned Labours
@@ -92,25 +137,6 @@
           <i class="fa-solid fa-user-gear"></i> User Management
         </button>
       </nav>
-
-      <div class="header-actions">
-        <div class="user-profile-badge" id="userProfileBadge">
-          <div class="user-avatar" id="userAvatar">A</div>
-          <div class="user-info">
-            <div class="user-name" id="headerUserName">Admin User</div>
-            <div class="user-role-tag" id="headerUserRole">Admin</div>
-          </div>
-          <button id="btnLogout" class="btn-logout" title="Log Out">
-            <i class="fa-solid fa-power-off"></i>
-          </button>
-        </div>
-        <button id="btnExportExcel" class="btn btn-secondary" style="background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; border: none; font-weight: 700;">
-          <i class="fa-solid fa-file-excel"></i> Export Excel
-        </button>
-        <button id="btnNewLabour" class="btn btn-primary">
-          <i class="fa-solid fa-plus"></i> Register New Labour
-        </button>
-      </div>
     </header>
 
     <!-- PAGE 1: LABOUR DIRECTORY & REGISTRATION VIEW -->
@@ -163,7 +189,8 @@
         <div class="toolbar-left">
           <div class="search-wrapper">
             <i class="fa-solid fa-magnifying-glass search-icon"></i>
-            <input type="text" id="searchInput" class="input-search" placeholder="Search by EPF, Name, Designation, Section...">
+            <input type="text" id="searchInput" class="input-search"
+              placeholder="Search by EPF, Name, Designation, Section...">
           </div>
 
           <div class="filters-wrapper">
@@ -198,9 +225,12 @@
           </div>
         </div>
 
-        <div class="toolbar-right">
-          <button id="btnClearFilters" class="btn btn-secondary" style="padding: 0.55rem 0.85rem; font-size: 0.8rem;">
+        <div class="toolbar-right" style="display: flex; gap: 0.5rem; align-items: center;">
+          <button id="btnClearFilters" type="button" class="btn btn-secondary" style="padding: 0.55rem 0.85rem; font-size: 0.8rem;">
             <i class="fa-solid fa-rotate-left"></i> Reset Filters
+          </button>
+          <button id="btnClearAllLabour" type="button" class="btn btn-outline-danger" style="padding: 0.55rem 0.85rem; font-size: 0.8rem; color: #fca5a5; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.15);" title="Delete all labour records from the system">
+            <i class="fa-solid fa-trash-can" style="pointer-events: none;"></i> Clear All
           </button>
         </div>
       </section>
@@ -212,27 +242,64 @@
             <thead>
               <tr>
                 <!-- Core Information Group -->
-                <th data-sort="epfNumber"><div class="th-content">EPF Number <i class="fa-solid fa-sort"></i></div></th>
-                <th data-sort="gender"><div class="th-content">Gender <i class="fa-solid fa-sort"></i></div></th>
-                <th data-sort="nameWithInitials"><div class="th-content">Name with Initials <i class="fa-solid fa-sort"></i></div></th>
-                <th data-sort="firstName"><div class="th-content">First Name <i class="fa-solid fa-sort"></i></div></th>
-                <th data-sort="lastName"><div class="th-content">Last Name <i class="fa-solid fa-sort"></i></div></th>
-                <th data-sort="birthDate"><div class="th-content">Birth Date <i class="fa-solid fa-sort"></i></div></th>
-                <th data-sort="joinedDate"><div class="th-content">Joined Date <i class="fa-solid fa-sort"></i></div></th>
-                
+                <th data-sort="epfNumber">
+                  <div class="th-content">EPF Number <i class="fa-solid fa-sort"></i></div>
+                </th>
+                <th data-sort="gender">
+                  <div class="th-content">Gender <i class="fa-solid fa-sort"></i></div>
+                </th>
+                <th data-sort="nameWithInitials">
+                  <div class="th-content">Name with Initials <i class="fa-solid fa-sort"></i></div>
+                </th>
+                <th data-sort="firstName">
+                  <div class="th-content">First Name <i class="fa-solid fa-sort"></i></div>
+                </th>
+                <th data-sort="lastName">
+                  <div class="th-content">Last Name <i class="fa-solid fa-sort"></i></div>
+                </th>
+                <th data-sort="birthDate">
+                  <div class="th-content">Birth Date <i class="fa-solid fa-sort"></i></div>
+                </th>
+                <th data-sort="joinedDate">
+                  <div class="th-content">Joined Date <i class="fa-solid fa-sort"></i></div>
+                </th>
+
                 <!-- Blue Tint Appraisal & Service Period Header Block (Matching Screenshot Visual Layout) -->
-                <th class="th-appraisal-group" data-sort="firstAppraisalDate"><div class="th-content">1st Appraisal Date ( After One Month ) <i class="fa-solid fa-sort"></i></div></th>
-                <th class="th-appraisal-group" data-sort="servicePeriod"><div class="th-content">Service Period <i class="fa-solid fa-sort"></i></div></th>
-                <th class="th-appraisal-group" data-sort="firstAppraisalMarks"><div class="th-content">1st Appraisal Marks <i class="fa-solid fa-sort"></i></div></th>
-                <th class="th-appraisal-group" data-sort="secondAppraisalDate"><div class="th-content">2nd Appraisal Date ( After 3 Months ) <i class="fa-solid fa-sort"></i></div></th>
-                <th class="th-appraisal-group" data-sort="secondAppraisalMarks"><div class="th-content">2nd Appraisal Marks <i class="fa-solid fa-sort"></i></div></th>
-                <th class="th-appraisal-group" data-sort="resignDate"><div class="th-content">RESIGN DATE <i class="fa-solid fa-sort"></i></div></th>
-                <th class="th-appraisal-group" data-sort="confirmationLetter"><div class="th-content">Confirmation Letter <i class="fa-solid fa-sort"></i></div></th>
+                <th class="th-appraisal-group" data-sort="firstAppraisalDate">
+                  <div class="th-content">1st Appraisal Date ( After One Month ) <i class="fa-solid fa-sort"></i></div>
+                </th>
+                <th class="th-appraisal-group" data-sort="medicalDate">
+                  <div class="th-content">Medical Date ( After 2 Months ) <i class="fa-solid fa-sort"></i></div>
+                </th>
+                <th class="th-appraisal-group" data-sort="servicePeriod">
+                  <div class="th-content">Service Period <i class="fa-solid fa-sort"></i></div>
+                </th>
+                <th class="th-appraisal-group" data-sort="firstAppraisalMarks">
+                  <div class="th-content">1st Appraisal Marks <i class="fa-solid fa-sort"></i></div>
+                </th>
+                <th class="th-appraisal-group" data-sort="secondAppraisalDate">
+                  <div class="th-content">2nd Appraisal Date ( After 3 Months ) <i class="fa-solid fa-sort"></i></div>
+                </th>
+                <th class="th-appraisal-group" data-sort="secondAppraisalMarks">
+                  <div class="th-content">2nd Appraisal Marks <i class="fa-solid fa-sort"></i></div>
+                </th>
+                <th class="th-appraisal-group" data-sort="resignDate">
+                  <div class="th-content">RESIGN DATE <i class="fa-solid fa-sort"></i></div>
+                </th>
+                <th class="th-appraisal-group" data-sort="confirmationLetter">
+                  <div class="th-content">Confirmation Letter <i class="fa-solid fa-sort"></i></div>
+                </th>
 
                 <!-- Job Placement Group -->
-                <th data-sort="designation"><div class="th-content">Designation <i class="fa-solid fa-sort"></i></div></th>
-                <th data-sort="jobRole"><div class="th-content">Job Role <i class="fa-solid fa-sort"></i></div></th>
-                <th data-sort="section"><div class="th-content">Section <i class="fa-solid fa-sort"></i></div></th>
+                <th data-sort="designation">
+                  <div class="th-content">Designation <i class="fa-solid fa-sort"></i></div>
+                </th>
+                <th data-sort="jobRole">
+                  <div class="th-content">Job Role <i class="fa-solid fa-sort"></i></div>
+                </th>
+                <th data-sort="section">
+                  <div class="th-content">Section <i class="fa-solid fa-sort"></i></div>
+                </th>
 
                 <!-- Action Column -->
                 <th style="text-align: center;">Actions</th>
@@ -381,6 +448,143 @@
       </div>
     </div>
 
+    <!-- PAGE: MEDICAL DUE DASHBOARD -->
+    <div id="medicalPage" class="page-view" style="display: none;">
+      <!-- Medical Stats Summary -->
+      <section class="stats-grid" style="margin-bottom: 1.5rem;">
+        <div class="stat-card">
+          <div class="stat-icon orange">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="statMedicalOverdue">0</div>
+            <div class="stat-label">Medical Overdue</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon blue">
+            <i class="fa-solid fa-clock"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="statMedicalDueSoon">0</div>
+            <div class="stat-label">Medical Due Soon (30d)</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon green">
+            <i class="fa-solid fa-circle-check"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="statMedicalCompleted">0</div>
+            <div class="stat-label">Fit / Completed</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon teal">
+            <i class="fa-solid fa-notes-medical"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value" id="statMedicalUpcoming">0</div>
+            <div class="stat-label">Upcoming Checkups</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Control Toolbar for Medical Due Page -->
+      <section class="toolbar" style="margin-bottom: 1.5rem;">
+        <div class="toolbar-left">
+          <div class="search-wrapper">
+            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+            <input type="text" id="searchMedicalInput" class="input-search"
+              placeholder="Search by EPF, Name, Designation, Section...">
+          </div>
+
+          <div class="filters-wrapper">
+            <select id="filterMedicalDueStatus" class="select-filter">
+              <option value="">All Statuses (Due & Completed)</option>
+              <option value="pendingAction" selected>Action Required (Overdue & Due Soon)</option>
+              <option value="Overdue">Overdue Only</option>
+              <option value="Due Soon">Due Soon (Within 30d)</option>
+              <option value="Completed">Completed / Fit</option>
+              <option value="Upcoming">Upcoming (>30d)</option>
+            </select>
+
+            <select id="filterMedicalSection" class="select-filter">
+              <option value="">All Sections</option>
+            </select>
+
+            <button id="btnClearMedicalFilters" class="btn btn-secondary" title="Reset Filters" style="padding: 0.55rem 0.85rem; font-size: 0.8rem;">
+              <i class="fa-solid fa-rotate-left"></i> Reset
+            </button>
+          </div>
+        </div>
+
+        <div class="toolbar-right">
+          <button id="btnExportMedicalExcel" class="btn btn-secondary"
+            style="background: linear-gradient(135deg, #0284c7, #0369a1); color: #ffffff; border: none; font-weight: 700;">
+            <i class="fa-solid fa-file-excel"></i> Export Medical Report
+          </button>
+        </div>
+      </section>
+
+      <!-- Charts & Table Grid -->
+      <div class="medical-grid">
+        <!-- Medical Status Doughnut Chart Card -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div class="chart-card-title" style="color: var(--accent-blue);">
+              <i class="fa-solid fa-chart-pie"></i> Medical Status (2 Months After Join)
+            </div>
+            <span class="badge badge-pending" id="badgeTotalMedicalDue">0 Due</span>
+          </div>
+
+          <div class="chart-canvas-container" style="height: 250px;">
+            <canvas id="chartMedicalStatus"></canvas>
+          </div>
+
+          <div style="background: var(--bg-input); padding: 0.75rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); font-size: 0.8rem; color: var(--text-muted); line-height: 1.5;">
+            <div style="font-weight: 700; color: var(--text-main); margin-bottom: 0.25rem;">
+              <i class="fa-solid fa-circle-info" style="color: var(--accent-blue);"></i> Medical Examination Policy:
+            </div>
+            Labourers undergo medical evaluation exactly <strong>2 months</strong> from their joined date. Click <strong>Mark Medical</strong> on any row to record fitness or clinic clearance.
+          </div>
+        </div>
+
+        <!-- Labourers Medical Due List -->
+        <div class="chart-card" style="overflow: hidden;">
+          <div class="chart-card-header">
+            <div class="chart-card-title" style="color: #2dd4bf;">
+              <i class="fa-solid fa-clipboard-user"></i> Medical Checkup Schedule & Follow-Up
+            </div>
+            <span id="medicalListCountBadge" class="badge badge-ok" style="font-size: 0.75rem;">Showing 0</span>
+          </div>
+
+          <div class="table-wrapper" style="max-height: 480px; min-height: 280px;">
+            <table class="labour-table" id="medicalTable" style="font-size: 0.8rem;">
+              <thead>
+                <tr>
+                  <th>EPF</th>
+                  <th>Labourer Name</th>
+                  <th>Section</th>
+                  <th>Joined Date</th>
+                  <th>Medical Due Date</th>
+                  <th>Status</th>
+                  <th>Result</th>
+                  <th style="text-align: center;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="bodyMedicalDue">
+                <!-- Rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- PAGE 3: RESIGNED LABOURS DIRECTORY VIEW -->
     <div id="resignedPage" class="page-view" style="display: none;">
       <!-- Stats Cards for Resigned Labours -->
@@ -436,16 +640,36 @@
           <table class="labour-table" id="resignedLabourTable">
             <thead>
               <tr>
-                <th><div class="th-content">EPF Number</div></th>
-                <th><div class="th-content">Gender</div></th>
-                <th><div class="th-content">Name with Initials</div></th>
-                <th><div class="th-content">Joined Date</div></th>
-                <th><div class="th-content">RESIGN DATE</div></th>
-                <th class="th-appraisal-group"><div class="th-content">Final Service Period</div></th>
-                <th><div class="th-content">1st Appraisal</div></th>
-                <th><div class="th-content">2nd Appraisal</div></th>
-                <th><div class="th-content">Designation</div></th>
-                <th><div class="th-content">Section</div></th>
+                <th>
+                  <div class="th-content">EPF Number</div>
+                </th>
+                <th>
+                  <div class="th-content">Gender</div>
+                </th>
+                <th>
+                  <div class="th-content">Name with Initials</div>
+                </th>
+                <th>
+                  <div class="th-content">Joined Date</div>
+                </th>
+                <th>
+                  <div class="th-content">RESIGN DATE</div>
+                </th>
+                <th class="th-appraisal-group">
+                  <div class="th-content">Final Service Period</div>
+                </th>
+                <th>
+                  <div class="th-content">1st Appraisal</div>
+                </th>
+                <th>
+                  <div class="th-content">2nd Appraisal</div>
+                </th>
+                <th>
+                  <div class="th-content">Designation</div>
+                </th>
+                <th>
+                  <div class="th-content">Section</div>
+                </th>
                 <th style="text-align: center;">Actions</th>
               </tr>
             </thead>
@@ -522,11 +746,21 @@
           <table class="labour-table">
             <thead>
               <tr>
-                <th><div class="th-content">Section Name</div></th>
-                <th><div class="th-content">Active Labourers</div></th>
-                <th><div class="th-content">Resigned Labourers</div></th>
-                <th><div class="th-content">Total Registered</div></th>
-                <th><div class="th-content">Section Turnover Rate</div></th>
+                <th>
+                  <div class="th-content">Section Name</div>
+                </th>
+                <th>
+                  <div class="th-content">Active Labourers</div>
+                </th>
+                <th>
+                  <div class="th-content">Resigned Labourers</div>
+                </th>
+                <th>
+                  <div class="th-content">Total Registered</div>
+                </th>
+                <th>
+                  <div class="th-content">Section Turnover Rate</div>
+                </th>
               </tr>
             </thead>
             <tbody id="bodySectionBreakdown">
@@ -577,7 +811,8 @@
         <div class="toolbar-left">
           <div class="search-wrapper">
             <i class="fa-solid fa-magnifying-glass search-icon"></i>
-            <input type="text" id="searchUserInput" class="form-control" placeholder="Search users by name, username, email...">
+            <input type="text" id="searchUserInput" class="form-control"
+              placeholder="Search users by name, username, email...">
           </div>
 
           <select id="filterUserRole" class="form-control" style="width: auto;">
@@ -601,12 +836,24 @@
           <table class="labour-table" id="usersTable">
             <thead>
               <tr>
-                <th><div class="th-content">Username</div></th>
-                <th><div class="th-content">Full Name</div></th>
-                <th><div class="th-content">Email Address</div></th>
-                <th><div class="th-content">Role / Access Level</div></th>
-                <th><div class="th-content">Created Date</div></th>
-                <th><div class="th-content">Account Status</div></th>
+                <th>
+                  <div class="th-content">Username</div>
+                </th>
+                <th>
+                  <div class="th-content">Full Name</div>
+                </th>
+                <th>
+                  <div class="th-content">Email Address</div>
+                </th>
+                <th>
+                  <div class="th-content">Role / Access Level</div>
+                </th>
+                <th>
+                  <div class="th-content">Created Date</div>
+                </th>
+                <th>
+                  <div class="th-content">Account Status</div>
+                </th>
                 <th style="text-align: center;">Actions</th>
               </tr>
             </thead>
@@ -666,7 +913,8 @@
 
             <div class="form-group">
               <label for="nameWithInitials">Name with Initials <span class="required">*</span></label>
-              <input type="text" id="nameWithInitials" class="form-control" placeholder="e.g. S P S Madhusanka" required>
+              <input type="text" id="nameWithInitials" class="form-control" placeholder="e.g. S P S Madhusanka"
+                required>
             </div>
 
             <div class="form-group">
@@ -697,7 +945,8 @@
 
             <div class="form-group">
               <label for="designation">Designation</label>
-              <input type="text" id="designation" class="form-control" placeholder="e.g. Production Assistant, Helper, Supervisor" list="designationList">
+              <input type="text" id="designation" class="form-control"
+                placeholder="e.g. Production Assistant, Helper, Supervisor" list="designationList">
               <datalist id="designationList">
                 <option value="Production Assistant">
                 <option value="Production Helper">
@@ -710,7 +959,8 @@
 
             <div class="form-group">
               <label for="jobRole">Job Role</label>
-              <input type="text" id="jobRole" class="form-control" placeholder="e.g. Daily Wages, Office Staff, Driver" list="jobRoleList">
+              <input type="text" id="jobRole" class="form-control" placeholder="e.g. Daily Wages, Office Staff, Driver"
+                list="jobRoleList">
               <datalist id="jobRoleList">
                 <option value="Production Assistant">
                 <option value="Daily Wages">
@@ -745,12 +995,17 @@
 
         <!-- Appraisals, Resignation & Calculation Section -->
         <div>
-          <div class="form-section-title"><i class="fa-solid fa-calculator"></i> Appraisals, Resignation & Calculations</div>
-          
-          <div class="calc-preview-banner" style="margin-bottom: 1rem;">
+          <div class="form-section-title"><i class="fa-solid fa-calculator"></i> Appraisals, Resignation & Calculations
+          </div>
+
+          <div class="calc-preview-banner" style="margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;">
             <div class="calc-preview-item">
               <span class="calc-preview-label">Auto 1st Appraisal Date</span>
               <span class="calc-preview-value" id="previewAppraisal1">-</span>
+            </div>
+            <div class="calc-preview-item">
+              <span class="calc-preview-label">Auto Medical Date (2 Mo)</span>
+              <span class="calc-preview-value" id="previewMedicalDate">-</span>
             </div>
             <div class="calc-preview-item">
               <span class="calc-preview-label">Auto 2nd Appraisal Date</span>
@@ -771,6 +1026,21 @@
             <div class="form-group">
               <label for="firstAppraisalMarks">1st Appraisal Marks</label>
               <input type="text" id="firstAppraisalMarks" class="form-control" placeholder="e.g. 85% or -">
+            </div>
+
+            <div class="form-group">
+              <label for="medicalDate">Medical Date (After 2 Months) <span style="font-size: 0.72rem; color: var(--accent-blue); font-weight: 500;">(Auto Calculated)</span></label>
+              <input type="date" id="medicalDate" class="form-control">
+            </div>
+
+            <div class="form-group">
+              <label for="medicalStatus">Medical Status / Result</label>
+              <select id="medicalStatus" class="form-control">
+                <option value="Pending">Pending (Awaiting Medical)</option>
+                <option value="Fit">Fit / Passed Examination</option>
+                <option value="Unfit">Unfit / Disqualified</option>
+                <option value="Completed">Completed (Cleared)</option>
+              </select>
             </div>
 
             <div class="form-group">
@@ -800,11 +1070,17 @@
         </div>
       </form>
 
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" id="btnCancelModal">Cancel</button>
-        <button type="button" class="btn btn-primary" id="btnSaveLabour">
-          <i class="fa-solid fa-floppy-disk"></i> Save Labour Record
+      <div class="modal-footer" style="justify-content: space-between;">
+        <button type="button" class="btn btn-outline-danger" id="btnDeleteLabourModal"
+          style="display: none; color: #fca5a5; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.15);">
+          <i class="fa-solid fa-trash-can"></i> Delete Labour Record
         </button>
+        <div style="display: flex; gap: 0.75rem; margin-left: auto;">
+          <button type="button" class="btn btn-secondary" id="btnCancelModal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnSaveLabour">
+            <i class="fa-solid fa-floppy-disk"></i> Save Labour Record
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -823,10 +1099,14 @@
 
       <div class="modal-body">
         <input type="hidden" id="resignLabourId" value="">
-        <div style="background: var(--bg-input); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
-          <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Labour Details</div>
-          <div id="resignLabourInfo" style="font-weight: 700; font-size: 1.05rem; color: var(--text-main); margin-top: 0.25rem;">-</div>
-          <div id="resignLabourJoined" style="font-size: 0.825rem; color: var(--accent-blue); margin-top: 0.25rem;">Joined: -</div>
+        <div
+          style="background: var(--bg-input); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+          <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+            Labour Details</div>
+          <div id="resignLabourInfo"
+            style="font-weight: 700; font-size: 1.05rem; color: var(--text-main); margin-top: 0.25rem;">-</div>
+          <div id="resignLabourJoined" style="font-size: 0.825rem; color: var(--accent-blue); margin-top: 0.25rem;">
+            Joined: -</div>
         </div>
 
         <div class="form-group" style="margin-top: 1rem;">
@@ -849,6 +1129,67 @@
         </button>
       </div>
     </div>
+  </div>
+
+  <!-- Record / Update Medical Checkup Modal -->
+  <div class="modal-backdrop" id="medicalRecordModal">
+    <div class="modal-card" style="max-width: 520px;">
+      <div class="modal-header">
+        <h2 class="modal-title" style="color: #2dd4bf;">
+          <i class="fa-solid fa-notes-medical"></i> Update Medical Checkup Result
+        </h2>
+        <button class="btn-icon" id="btnCloseMedicalModal" title="Close">
+          <i class="fa-solid fa-xmark fa-lg"></i>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <input type="hidden" id="medicalRecordLabourId" value="">
+        <div style="background: var(--bg-input); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+          <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Labourer Details</div>
+          <div id="medicalModalLabourInfo" style="font-weight: 700; font-size: 1.05rem; color: var(--text-main); margin-top: 0.25rem;">-</div>
+          <div style="display: flex; gap: 1rem; margin-top: 0.35rem; font-size: 0.8rem; color: var(--text-muted);">
+            <span id="medicalModalJoined"><i class="fa-solid fa-calendar-day" style="color: var(--accent-blue);"></i> Joined: -</span>
+            <span id="medicalModalDueDate"><i class="fa-solid fa-clock" style="color: var(--accent-orange);"></i> Due Date: -</span>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 1rem;">
+          <label for="inputMedicalModalDate">Medical Examination Date <span class="required">*</span></label>
+          <input type="date" id="inputMedicalModalDate" class="form-control" required>
+        </div>
+
+        <div class="form-group" style="margin-top: 0.75rem;">
+          <label for="selectMedicalModalResult">Medical Result / Fitness Status <span class="required">*</span></label>
+          <select id="selectMedicalModalResult" class="form-control" required>
+            <option value="Fit">Fit / Passed Examination</option>
+            <option value="Unfit">Unfit / Disqualified</option>
+            <option value="Completed">Completed (Cleared)</option>
+            <option value="Pending">Pending (Follow-up Required)</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin-top: 0.75rem;">
+          <label for="inputMedicalModalClinic">Hospital / Clinic / Medical Officer</label>
+          <input type="text" id="inputMedicalModalClinic" class="form-control" placeholder="e.g. Asiri Hospital, Factory MO, Dr. Perera">
+        </div>
+
+        <div class="form-group" style="margin-top: 0.75rem;">
+          <label for="inputMedicalModalNotes">Medical Remarks / Notes</label>
+          <textarea id="inputMedicalModalNotes" class="form-control" rows="2" placeholder="e.g. Vision certified, Blood pressure normal, Chest X-ray clear..."></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="btnCancelMedicalModal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btnSaveMedicalModal"
+          style="background: linear-gradient(135deg, #0d9488, #0f766e); border-color: #14b8a6;">
+          <i class="fa-solid fa-floppy-disk"></i> Save Medical Result
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Register / Edit System User Modal -->
   <div class="modal-backdrop" id="userModal">
     <div class="modal-card" style="max-width: 520px;">
@@ -881,7 +1222,30 @@
 
         <div class="form-group">
           <label for="userPassword">Password <span class="required">*</span></label>
-          <input type="password" id="userPassword" class="form-control" placeholder="Set user account password" required>
+          <div class="input-icon-wrapper">
+            <input type="password" id="userPassword" class="form-control" placeholder="Minimum 8 chars (e.g. Pass@123)"
+              required autocomplete="new-password">
+            <button type="button" id="btnToggleUserPw" class="btn-toggle-pw" title="Toggle password visibility">
+              <i class="fa-solid fa-eye" id="iconToggleUserPw"></i>
+            </button>
+          </div>
+
+          <!-- Dynamic Password Strength Bar -->
+          <div class="pw-strength-container" style="margin-top: 0.4rem;">
+            <div class="pw-meter-bar">
+              <div class="pw-meter-fill" id="pwMeterFill"></div>
+            </div>
+            <div class="pw-strength-label">Password Strength: <span id="pwStrengthStatus">Enter password</span></div>
+          </div>
+
+          <!-- Real-time Password Rules Checklist -->
+          <div class="pw-rules-grid" style="margin-top: 0.35rem;">
+            <span class="pw-rule-item" id="ruleLength"><i class="fa-solid fa-circle-xmark"></i> 8+ Chars</span>
+            <span class="pw-rule-item" id="ruleUpper"><i class="fa-solid fa-circle-xmark"></i> Uppercase (A-Z)</span>
+            <span class="pw-rule-item" id="ruleLower"><i class="fa-solid fa-circle-xmark"></i> Lowercase (a-z)</span>
+            <span class="pw-rule-item" id="ruleNumber"><i class="fa-solid fa-circle-xmark"></i> Number (0-9)</span>
+            <span class="pw-rule-item" id="ruleSymbol"><i class="fa-solid fa-circle-xmark"></i> Symbol (!@#$)</span>
+          </div>
         </div>
 
         <div class="form-group">
@@ -894,10 +1258,214 @@
         </div>
       </form>
 
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" id="btnCancelUserModal">Cancel</button>
-        <button type="button" class="btn btn-primary" id="btnSaveUser">
-          <i class="fa-solid fa-floppy-disk"></i> Save User Account
+      <div class="modal-footer" style="justify-content: space-between;">
+        <button type="button" class="btn btn-outline-danger" id="btnDeleteUserModal"
+          style="display: none; color: #fca5a5; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.15);">
+          <i class="fa-solid fa-trash-can"></i> Delete User Account
+        </button>
+        <div style="display: flex; gap: 0.75rem; margin-left: auto;">
+          <button type="button" class="btn btn-secondary" id="btnCancelUserModal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnSaveUser">
+            <i class="fa-solid fa-floppy-disk"></i> Save User Account
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk Excel / CSV Import Modal -->
+  <div class="modal-backdrop" id="excelImportModal">
+    <div class="modal-card" style="max-width: 950px; width: 95vw;">
+      <div class="modal-header">
+        <h2 class="modal-title" style="color: var(--accent-blue);">
+          <i class="fa-solid fa-file-excel"></i> Bulk Import Labour Records from Excel
+        </h2>
+        <button class="btn-icon" id="btnCloseImportModal" title="Close">
+          <i class="fa-solid fa-xmark fa-lg"></i>
+        </button>
+      </div>
+
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <!-- Top Toolbar: Supported headers info & template download button -->
+        <div class="import-template-box">
+          <div class="import-template-info">
+            <i class="fa-solid fa-circle-info" style="color: var(--accent-blue); font-size: 1.3rem;"></i>
+            <div>
+              <div style="font-weight: 700; color: var(--text-main);">Excel Column Headers Supported:</div>
+              <div class="headers-pills-row">
+                <span class="header-pill">EPF Number</span>
+                <span class="header-pill">Gender</span>
+                <span class="header-pill">Name with Initials</span>
+                <span class="header-pill">First Name</span>
+                <span class="header-pill">Last Name</span>
+                <span class="header-pill">Birth Date</span>
+                <span class="header-pill">Joined Date</span>
+                <span class="header-pill">1st Appraisal Date ( After One Month )</span>
+                <span class="header-pill">Service Period</span>
+                <span class="header-pill">1st Appraisal Marks</span>
+                <span class="header-pill">2nd Appraisal Date ( After 3 Months )</span>
+                <span class="header-pill">2nd Appraisal Marks</span>
+                <span class="header-pill">RESIGN DATE</span>
+                <span class="header-pill">Confermetion Letter</span>
+                <span class="header-pill">Designation</span>
+                <span class="header-pill">Job Role</span>
+                <span class="header-pill">Section</span>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.4rem;">
+                <i class="fa-solid fa-circle-check" style="color: var(--accent-green);"></i> Recommended Date Format: <strong>YYYY-MM-DD</strong> or standard Excel Date cells. Appraisal dates (+1m, +3m) and Service Periods are auto-computed if left blank.
+              </div>
+            </div>
+          </div>
+          <button type="button" id="btnDownloadTemplate" class="btn btn-secondary" style="white-space: nowrap; font-size: 0.825rem;">
+            <i class="fa-solid fa-file-arrow-down"></i> Download Sample Excel (.xlsx)
+          </button>
+        </div>
+
+        <!-- File Upload Drop Zone -->
+        <div class="drop-zone" id="importDropZone">
+          <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" style="display: none;">
+          <div class="drop-zone-icon">
+            <i class="fa-solid fa-cloud-arrow-up"></i>
+          </div>
+          <div class="drop-zone-text">
+            <strong>Click to browse</strong> or drag & drop your Excel file here
+          </div>
+          <div class="drop-zone-sub">Supports .xlsx, .xls, and .csv files with bulk labour records</div>
+          <div id="selectedFileName" class="selected-file-badge" style="display: none;">
+            <i class="fa-solid fa-file-excel"></i> <span id="fileNameText">filename.xlsx</span>
+            <button type="button" id="btnClearFile" class="btn-clear-file" title="Remove file">&times;</button>
+          </div>
+        </div>
+
+        <!-- Import Options: Duplicate Handling -->
+        <div class="import-options-box">
+          <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.4rem;">
+            <i class="fa-solid fa-sliders"></i> Duplicate Handling Policy:
+          </div>
+          <div class="radio-group-horizontal">
+            <label class="radio-label">
+              <input type="radio" name="importDuplicateAction" value="update" checked>
+              <span><strong>Update existing records</strong> (updates matching EPF with new details)</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="importDuplicateAction" value="skip">
+              <span><strong>Skip duplicates</strong> (keeps existing EPF records unchanged)</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Parsing Feedback & Summary Stats (Shown after file is read) -->
+        <div id="importStatsContainer" style="display: none;">
+          <div class="import-stats-grid">
+            <div class="import-stat-card">
+              <div class="import-stat-num" id="statImportTotal">0</div>
+              <div class="import-stat-label">Total Rows in File</div>
+            </div>
+            <div class="import-stat-card new">
+              <div class="import-stat-num" id="statImportNew">0</div>
+              <div class="import-stat-label">New Labourers</div>
+            </div>
+            <div class="import-stat-card existing">
+              <div class="import-stat-num" id="statImportExisting">0</div>
+              <div class="import-stat-label">Existing EPF (Duplicates)</div>
+            </div>
+            <div class="import-stat-card error">
+              <div class="import-stat-num" id="statImportInvalid">0</div>
+              <div class="import-stat-label">Invalid / Skipped</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Preview Table Container -->
+        <div id="importPreviewContainer" style="display: none; flex-direction: column; gap: 0.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+            <div style="font-size: 0.9rem; font-weight: 700; color: var(--text-main);">
+              <i class="fa-solid fa-table-list"></i> Data Preview (<span id="previewCountText">0 records ready</span>)
+            </div>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">
+              Appraisals & Service Periods automatically computed if blank
+            </div>
+          </div>
+          <div class="import-table-wrapper">
+            <table class="labour-table import-preview-table" style="font-size: 0.775rem;">
+              <thead>
+                <tr>
+                  <th>Import Status</th>
+                  <th>EPF Number</th>
+                  <th>Gender</th>
+                  <th>Name with Initials</th>
+                  <th>Joined Date</th>
+                  <th>Birth Date</th>
+                  <th>1st Appraisal</th>
+                  <th>Service Period</th>
+                  <th>2nd Appraisal</th>
+                  <th>RESIGN DATE</th>
+                  <th>Confirmation Letter</th>
+                  <th>Designation</th>
+                  <th>Job Role</th>
+                  <th>Section</th>
+                </tr>
+              </thead>
+              <tbody id="importPreviewTableBody">
+                <!-- Dynamically populated rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer" style="justify-content: space-between;">
+        <button type="button" class="btn btn-secondary" id="btnCancelImportModal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btnConfirmImport" disabled style="background: linear-gradient(135deg, #0284c7, #0369a1); font-weight: 700;">
+          <i class="fa-solid fa-cloud-arrow-up"></i> Confirm & Import Records (<span id="btnImportCount">0</span>)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dedicated Action & Delete Confirmation Modal (Native-Independent) -->
+  <div class="modal-backdrop" id="confirmActionModal" style="z-index: 150;">
+    <div class="modal-card" style="max-width: 490px; border-color: rgba(239, 68, 68, 0.4); box-shadow: 0 20px 45px rgba(0, 0, 0, 0.7), 0 0 35px rgba(239, 68, 68, 0.15);">
+      <div class="modal-header" style="border-bottom-color: rgba(239, 68, 68, 0.2);">
+        <h2 class="modal-title" id="confirmModalTitle" style="color: #ef4444; display: flex; align-items: center; gap: 0.5rem; font-size: 1.15rem;">
+          <i id="confirmModalIcon" class="fa-solid fa-triangle-exclamation"></i>
+          <span id="confirmModalTitleText">Confirm Deletion</span>
+        </h2>
+        <button type="button" class="btn-icon" id="btnCloseConfirmModal" title="Close">
+          <i class="fa-solid fa-xmark fa-lg"></i>
+        </button>
+      </div>
+
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 1rem; padding: 1.25rem;">
+        <div id="confirmModalBanner" class="alert alert-danger" style="display: flex; align-items: flex-start; gap: 0.75rem; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-md); padding: 0.9rem; color: #fca5a5; margin: 0;">
+          <i class="fa-solid fa-circle-exclamation fa-lg" style="margin-top: 0.2rem; flex-shrink: 0; color: #ef4444;"></i>
+          <div id="confirmModalMessage" style="font-size: 0.875rem; line-height: 1.45;">
+            Are you sure you want to permanently delete this labour record? This action cannot be undone.
+          </div>
+        </div>
+
+        <!-- Single Labour Details Card -->
+        <div id="confirmLabourDetailsCard" style="background: var(--bg-input); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 0.4rem;">
+          <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Labourer Information</div>
+          <div id="confirmLabourName" style="font-weight: 700; font-size: 1.05rem; color: var(--text-main);">-</div>
+          <div id="confirmLabourMeta" style="font-size: 0.825rem; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.25rem;">
+            <!-- Rendered badges: EPF, Section, Designation, Joined Date -->
+          </div>
+        </div>
+
+        <!-- Clear All Danger Card -->
+        <div id="confirmClearAllCard" style="background: rgba(239, 68, 68, 0.08); padding: 1.25rem; border-radius: var(--radius-md); border: 1px dashed rgba(239, 68, 68, 0.4); text-align: center; display: none;">
+          <div style="font-size: 2.25rem; font-weight: 800; color: #ef4444;" id="confirmClearAllCount">0</div>
+          <div style="font-size: 0.925rem; font-weight: 600; color: #fca5a5; margin-top: 0.25rem;">Total Labour Records</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.35rem;">All active and resigned labour records will be permanently erased.</div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="border-top-color: rgba(239, 68, 68, 0.2); justify-content: flex-end; gap: 0.75rem;">
+        <button type="button" class="btn btn-secondary" id="btnCancelConfirmModal" style="padding: 0.6rem 1.2rem;">Cancel</button>
+        <button type="button" class="btn btn-danger" id="btnExecuteConfirmModal" style="padding: 0.6rem 1.2rem; background: #dc2626; border-color: #ef4444; color: #ffffff; font-weight: 700; display: inline-flex; align-items: center; gap: 0.5rem;">
+          <i class="fa-solid fa-trash-can"></i> <span id="btnExecuteConfirmText">Confirm Delete</span>
         </button>
       </div>
     </div>
@@ -909,4 +1477,5 @@
   <!-- JavaScript Modules -->
   <script src="app.js"></script>
 </body>
+
 </html>
